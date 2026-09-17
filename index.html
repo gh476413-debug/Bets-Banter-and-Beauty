@@ -63,7 +63,7 @@ function APP(){
     + '.linkish{appearance:none;border:0;background:transparent;padding:0;font:inherit;color:var(--ink);font-weight:600;text-decoration:underline;cursor:pointer}'
     + '.synctxt{margin:0;font-size:13px;color:var(--muted);line-height:1.5}'
     + '.synctxt b{color:var(--ink);font-weight:600}'
-    + '#join-form{display:flex;flex-direction:column;gap:6px;margin-top:4px}'
+    + '#join-form,#gh-form{display:flex;flex-direction:column;gap:6px;margin-top:4px}'
     + '.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block}'
     + '.status[data-s="saving"] .dot{background:var(--gold)}'
     + '.status[data-s="saved"] .dot{background:var(--b)}'
@@ -323,23 +323,32 @@ function APP(){
   var root = document.getElementById('root');
   var LS_KEY = 'battles-bets-beauty-v1';
   var FMT_KEY = 'battles-bets-beauty-fmt';
-  var ID_KEY = 'battles-bets-beauty-board';
   var PASS_KEY = 'battles-bets-beauty-pass';
-  var CLOUD_BASE = 'https://jsonblob.com/api/jsonBlob';
+  var GH_KEY = 'battles-bets-beauty-gh';
+  var BOARD_FILE = 'board.json';
+  var ACCESS_FILE = 'access.json';
 
   // Three ways this page can keep score:
   //   artifact - running inside claude.ai, saves a new version of itself
   //   cloud    - hosted anywhere, syncs through a shared board code
   //   local    - hosted anywhere, saves in this browser only
   var localMode = !(window.claude && typeof window.claude.use === 'function');
-  var boardId = '';
+  var gh = { owner: '', repo: '', branch: 'main', token: '' };
   try{
-    boardId = (String(location.hash).match(/[#&]b=([A-Za-z0-9_\-]+)/) || [])[1]
-           || window.localStorage.getItem(ID_KEY) || '';
-  }catch(err){ boardId = ''; }
-  // A connected board wins over everything: once the score lives there, the
-  // copy inside Claude is just another window onto it rather than its own ledger.
-  var mode = boardId ? 'cloud' : (localMode ? 'local' : 'artifact');
+    var savedGh = JSON.parse(window.localStorage.getItem(GH_KEY) || 'null');
+    if(savedGh && savedGh.owner) gh = savedGh;
+  }catch(err){}
+  if(!gh.owner){
+    var found = detectRepo();
+    if(found){ gh.owner = found.owner; gh.repo = found.repo; }
+  }
+  if(!gh.branch) gh.branch = 'main';
+  var boardSha = '';
+  var boardEtag = '';
+  var needsSetup = false;
+  // Running from the repo means the repo is the board. Inside Claude the page
+  // saves itself and cannot call out at all, so it keeps its own tally.
+  var mode = (localMode && gh.owner && gh.repo) ? 'cloud' : (localMode ? 'local' : 'artifact');
   var syncErr = '';
   var lastRemote = '';
   var poller = null;
@@ -372,7 +381,7 @@ function APP(){
   var ledgerOpen = true;
   var calOpen = true;
   // Open until a board exists; after that it is settled business.
-  var syncOpen = !boardId;
+  var syncOpen = true;
   // A viewing preference, so it lives on this phone rather than on the shared board.
   var hour24 = false;
   try{ hour24 = window.localStorage.getItem(FMT_KEY) === '24'; }catch(err){}
@@ -1139,6 +1148,9 @@ function APP(){
     var banner = '';
     if(readOnly){
       banner = '<div class="banner"><b>View only.</b> You can follow the running score here, but logging a win needs edit access to this page.</div>';
+    } else if(mode === 'cloud' && (needsSetup || !gh.token)){
+      banner = '<div class="banner"><b>Not set up yet.</b> This page is served from your repo but has no board in it. '
+        + 'Open <button class="linkish" data-tab="settings">Settings</button> to finish the setup.</div>';
     } else if(mode === 'local'){
       banner = '<div class="banner"><b>Saving to this device only.</b> Taps here stay in this browser. '
         + 'Open <button class="linkish" data-tab="settings">Settings</button> to share one score across both phones.</div>';
@@ -1274,6 +1286,17 @@ function APP(){
       .then(function(ct){ return {enc:1, v:1, salt:cryptoSalt, iv:b64(iv), ct:b64(ct)}; });
   }
 
+  function sealText(str){
+    var iv = window.crypto.getRandomValues(new Uint8Array(12));
+    return subtle().encrypt({name:'AES-GCM', iv:iv}, cryptoKey, new TextEncoder().encode(String(str)))
+      .then(function(ct){ return {enc:1, v:1, salt:cryptoSalt, iv:b64(iv), ct:b64(ct)}; });
+  }
+
+  function openText(blob){
+    return subtle().decrypt({name:'AES-GCM', iv:unb64(blob.iv)}, cryptoKey, unb64(blob.ct))
+      .then(function(pt){ return new TextDecoder().decode(pt); });
+  }
+
   function openBlob(blob){
     return subtle().decrypt({name:'AES-GCM', iv:unb64(blob.iv)}, cryptoKey, unb64(blob.ct))
       .then(function(pt){ return JSON.parse(new TextDecoder().decode(pt)); });
@@ -1316,56 +1339,136 @@ function APP(){
       + '</div>';
   }
 
-  // ---- shared board (cloud) ----------------------------------------------
+  // ---- shared board: the repo itself --------------------------------------
+  // The page lives in a GitHub repo, so the board lives there too: one JSON file
+  // committed through the API. Everything in it is encrypted with the passcode,
+  // and the write token rides along in a second file, encrypted the same way, so
+  // the other phone needs nothing but the passcode.
+  function detectRepo(){
+    var h = String(location.hostname || ''), seg = String(location.pathname || '').split('/').filter(Boolean);
+    var m = h.match(/^([^.]+)\.github\.io$/i);
+    if(!m) return null;
+    return { owner: m[1], repo: seg.length ? seg[0] : (m[1] + '.github.io') };
+  }
+
+  function saveGh(){
+    try{ window.localStorage.setItem(GH_KEY, JSON.stringify(gh)); }catch(err){}
+  }
+
+  function apiBase(){
+    return 'https://api.github.com/repos/' + encodeURIComponent(gh.owner) + '/' + encodeURIComponent(gh.repo) + '/contents/';
+  }
+
+  function ghHeaders(auth){
+    var h = { 'Accept': 'application/vnd.github+json' };
+    if(auth && gh.token) h['Authorization'] = 'Bearer ' + gh.token;
+    return h;
+  }
+
+  function ghRead(file, auth, etag){
+    var h = ghHeaders(auth);
+    if(etag) h['If-None-Match'] = etag;
+    return fetch(apiBase() + file + '?ref=' + encodeURIComponent(gh.branch) + '&t=' + Date.now(), { headers: h })
+      .then(function(r){
+        if(r.status === 304) return { unchanged: true };
+        if(r.status === 404) return { missing: true };
+        if(r.status === 401 || r.status === 403){
+          return r.json().then(function(j){
+            throw new Error((j && j.message) ? j.message : 'GitHub refused that request.');
+          }, function(){ throw new Error('GitHub refused that request.'); });
+        }
+        if(!r.ok) throw new Error('GitHub answered ' + r.status + '.');
+        var tag = r.headers.get('ETag') || '';
+        return r.json().then(function(j){
+          var txt = '';
+          try{ txt = decodeURIComponent(escape(atob(String(j.content || '').replace(/\s/g, '')))); }
+          catch(err){ txt = atob(String(j.content || '').replace(/\s/g, '')); }
+          return { text: txt, sha: j.sha, etag: tag };
+        });
+      });
+  }
+
+  function ghWrite(file, text, sha, message){
+    var b;
+    try{ b = btoa(unescape(encodeURIComponent(text))); }catch(err){ b = btoa(text); }
+    return fetch(apiBase() + file, {
+      method: 'PUT',
+      headers: (function(){ var h = ghHeaders(true); h['Content-Type'] = 'application/json'; return h; })(),
+      body: JSON.stringify({ message: message, content: b, branch: gh.branch, sha: sha || undefined })
+    }).then(function(r){
+      if(r.status === 409 || r.status === 422) return { stale: true };
+      if(!r.ok){
+        return r.json().then(function(j){
+          throw new Error((j && j.message) ? j.message : ('GitHub answered ' + r.status + '.'));
+        }, function(){ throw new Error('GitHub answered ' + r.status + '.'); });
+      }
+      return r.json().then(function(j){ return { sha: j.content && j.content.sha }; });
+    });
+  }
+
   function shareLink(){
-    return location.origin + location.pathname + (boardId ? '#b=' + boardId : '');
+    return location.origin + location.pathname;
   }
 
   function startPolling(){
     if(poller || mode !== 'cloud') return;
     poller = setInterval(function(){
-      if(locked) return;                                                        // nothing to refresh until somebody types the passcode
+      if(locked || !gh.token) return;                                           // nothing to refresh until the passcode is in
       if(draft || photoView || chooser || betView || adding || timer) return;   // don't yank an open sheet or a pending save out from under anyone
       pullCloud(false);
-    }, 12000);
+    }, 20000);
+  }
+
+  // The passcode gets us the token, which gets us everything else.
+  function unlockWith(phrase){
+    lockErr = '';
+    return ghRead(ACCESS_FILE, false).then(function(res){
+      if(res.missing) throw new Error('This board has no passcode file yet. Set it up from the phone that created it.');
+      var blob = JSON.parse(res.text);
+      cryptoSalt = blob.salt;
+      return deriveKey(phrase, blob.salt).then(function(k){
+        cryptoKey = k;
+        return openText(blob);
+      });
+    }).then(function(token){
+      gh.token = String(token || '').trim();
+      saveGh();
+      rememberPass(phrase);
+      locked = false;
+      return pullCloud(true).then(startPolling);
+    });
   }
 
   function pullCloud(initial){
-    return fetch(CLOUD_BASE + '/' + boardId, { headers: {'Accept': 'application/json'}, cache: 'no-store' })
-      .then(function(r){
-        if(r.status === 404) throw new Error('That board code no longer exists on the server.');
-        if(!r.ok) throw new Error('The server answered ' + r.status + '.');
-        return r.json();
-      })
-      .then(function(data){
-        if(data && data.enc){
-          if(!subtle()) throw new Error('This board is passcode-locked, and this browser has no way to unlock it. Open the https link rather than the file itself.');
-          cryptoSalt = data.salt;
-          var ready = cryptoKey ? Promise.resolve(cryptoKey)
-                    : (passPhrase ? deriveKey(passPhrase, data.salt).then(function(k){ cryptoKey = k; return k; })
-                                  : Promise.reject({ needPass: true }));
-          return ready.then(function(){ return openBlob(data); })
-            .then(function(plain){
-              if(!plain || !plain.games || !plain.log) throw new Error('That code points at something that is not a scoreboard.');
-              locked = false; lockErr = ''; syncErr = '';
-              adopt(plain);
-              status = 'idle';
-              render();
-            }, function(err){
-              // A bad passcode and a missing one land in the same place: the lock screen.
-              cryptoKey = null;
-              locked = true;
-              lockErr = (err && err.needPass) ? '' : 'That passcode did not open this board.';
-              if(!(err && err.needPass)) forgetPass();
-              syncErr = ''; status = 'idle';
-              render();
-            });
+    return ghRead(BOARD_FILE, !!gh.token, boardEtag)
+      .then(function(res){
+        if(res.unchanged){ status = 'idle'; return; }
+        if(res.missing){
+          // Nothing on the repo yet: this copy is the one that seeds it.
+          syncErr = ''; needsSetup = true; status = 'idle'; render(); return;
         }
-        if(!data || !data.games || !data.log) throw new Error('That code points at something that is not a scoreboard.');
-        locked = false; syncErr = '';
-        adopt(data);
-        status = 'idle';
-        render();
+        needsSetup = false;
+        boardEtag = res.etag; boardSha = res.sha;
+        var data = JSON.parse(res.text);
+        if(data && data.enc){
+          if(!subtle()) throw new Error('This board is locked and this browser cannot decrypt. Open the https link rather than a saved file.');
+          cryptoSalt = data.salt;
+          if(!cryptoKey){
+            if(!passPhrase){ locked = true; syncErr = ''; status = 'idle'; render(); return; }
+            return deriveKey(passPhrase, data.salt).then(function(k){ cryptoKey = k; return openBlob(data); })
+              .then(function(plain){ landed(plain); }, function(){
+                cryptoKey = null; forgetPass(); locked = true;
+                lockErr = 'That passcode did not open this board.';
+                status = 'idle'; render();
+              });
+          }
+          return openBlob(data).then(function(plain){ landed(plain); }, function(){
+            cryptoKey = null; forgetPass(); locked = true;
+            lockErr = 'That passcode did not open this board.';
+            status = 'idle'; render();
+          });
+        }
+        landed(data);
       })
       .catch(function(e){
         syncErr = e.message || String(e);
@@ -1374,93 +1477,111 @@ function APP(){
       });
   }
 
+  function landed(plain){
+    if(!plain || !plain.games || !plain.log) throw new Error('The board file on the repo is not a scoreboard.');
+    locked = false; lockErr = ''; syncErr = '';
+    adopt(plain);
+    status = 'idle';
+    render();
+  }
+
   function pushCloud(){
+    if(!gh.token){ syncErr = 'No write access on this phone yet.'; status = 'error'; render(); return Promise.resolve(); }
     var plain = JSON.stringify(STATE);
-    var prep = cryptoKey ? sealState().then(function(o){ return JSON.stringify(o); })
-                         : Promise.resolve(plain);
-    return prep.then(function(body){
-        return fetch(CLOUD_BASE + '/' + boardId, {
-          method: 'PUT',
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-          body: body
+    var prep = cryptoKey ? sealState().then(function(o){ return JSON.stringify(o); }) : Promise.resolve(plain);
+    return prep.then(function(text){
+      if(text.length > 900000) throw new Error('The board has grown past what a single commit should carry. Remove a photo or two.');
+      return ghWrite(BOARD_FILE, text, boardSha, 'Score update').then(function(res){
+        if(!res.stale) return res;
+        // Someone else committed first: take their sha and land on top of it.
+        return ghRead(BOARD_FILE, true).then(function(cur){
+          boardSha = cur.sha;
+          return ghWrite(BOARD_FILE, text, boardSha, 'Score update');
         });
-      })
-      .then(function(r){
-        if(!r.ok) throw new Error('The server answered ' + r.status + '.');
-        lastRemote = plain; syncErr = ''; setStatus('saved');
-      })
-      .catch(function(e){
-        syncErr = e.message || String(e); status = 'error'; render();
       });
+    }).then(function(res){
+      if(res && res.sha) boardSha = res.sha;
+      boardEtag = '';
+      lastRemote = plain; syncErr = ''; setStatus('saved');
+    }).catch(function(e){
+      syncErr = e.message || String(e); status = 'error'; render();
+    });
   }
 
-  function connectBoard(id, adoptRemote){
-    boardId = id;
-    try{ window.localStorage.setItem(ID_KEY, id); }catch(err){}
-    try{ location.hash = 'b=' + id; }catch(err){}
-    mode = 'cloud';
-    syncErr = '';
-    if(adoptRemote){ setStatus('saving'); pullCloud(true).then(startPolling); }
-    else { lastRemote = JSON.stringify(STATE); setStatus('saved'); render(); startPolling(); }
-  }
-
-  function createBoard(){
-    syncErr = ''; setStatus('saving');
-    fetch(CLOUD_BASE, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-        body: JSON.stringify(STATE)
-      })
-      .then(function(r){
-        if(!r.ok) throw new Error('The server answered ' + r.status + '.');
-        var loc = r.headers.get('Location') || r.headers.get('X-jsonblob') || '';
-        var id = String(loc).split('/').pop();
-        if(!id) throw new Error('The board was created but the browser was not allowed to read its code. Use the manual step below instead.');
-        connectBoard(id, false);
-      })
-      .catch(function(e){
-        syncErr = e.message || String(e); status = 'error'; render();
+  // First run on the repo: write the board and the encrypted token.
+  function setUpBoard(token, phrase){
+    gh.token = String(token || '').trim();
+    saveGh();
+    cryptoSalt = b64(window.crypto.getRandomValues(new Uint8Array(16)));
+    return deriveKey(phrase, cryptoSalt).then(function(k){
+      cryptoKey = k;
+      rememberPass(phrase);
+      return sealText(gh.token);
+    }).then(function(blob){
+      return ghRead(ACCESS_FILE, true).then(function(cur){
+        return ghWrite(ACCESS_FILE, JSON.stringify(blob), cur.missing ? '' : cur.sha, 'Set the passcode');
       });
+    }).then(function(){
+      return ghRead(BOARD_FILE, true).then(function(cur){ boardSha = cur.missing ? '' : cur.sha; });
+    }).then(function(){
+      needsSetup = false; locked = false;
+      return pushCloud().then(startPolling);
+    });
   }
 
   function disconnectBoard(){
-    boardId = ''; mode = 'local'; syncErr = ''; lastRemote = '';
+    gh.token = ''; saveGh();
+    forgetPass();
+    cryptoKey = null; boardSha = ''; boardEtag = ''; lastRemote = '';
     if(poller){ clearInterval(poller); poller = null; }
-    try{ window.localStorage.removeItem(ID_KEY); }catch(err){}
-    try{ location.hash = ''; }catch(err){}
-    status = 'idle'; render();
+    locked = false; status = 'idle'; render();
   }
+
 
   function settingsView(){
     var rows = '';
     if(mode === 'artifact'){
       rows = '<p class="synctxt">This copy runs inside Claude and saves itself there, which is why it needs a Claude sign-in. '
-        + 'It also cannot reach the sync service &mdash; Claude blocks pages from calling out &mdash; so a shared board '
-        + 'has to be started from the hosted copy, which begins with whatever was in the file you uploaded.</p>'
-        + '<p class="synctxt">Once that board exists, this page keeps its own separate tally. '
-        + 'Treat the hosted copy as the real one.</p>';
-    } else if(mode === 'cloud'){
-      rows = '<p class="synctxt"><b>Connected.</b> The score lives on a shared board, so both phones see the same numbers. '
-        + 'It refreshes every few seconds and whenever you tap.</p>'
-        + (localMode ? '' : '<p class="synctxt"><b>This copy is the one inside Claude</b>, so the link below points back here '
-            + 'and still needs a sign-in. Send the board code instead, or open your hosted copy and copy the link from there.</p>')
-        + '<div><label for="sy-link">' + IC_PIN + (localMode ? 'Share this link' : 'This page&rsquo;s link')  + '</label>'
+        + 'It also cannot call out to anything &mdash; Claude blocks that &mdash; so the shared board runs from the copy in your '
+        + 'GitHub repo instead. Treat that one as the real board; this page keeps its own separate tally.</p>';
+    } else if(mode === 'cloud' && gh.token && !needsSetup){
+      rows = '<p class="synctxt"><b>Connected to ' + esc(gh.owner) + '/' + esc(gh.repo) + '.</b> '
+        + 'The score is a file in that repo, saved with every tap and re-read every twenty seconds.</p>'
+        + '<div><label for="sy-link">' + IC_PIN + 'Share this link</label>'
         + '<input class="inp" id="sy-link" type="text" readonly value="' + esc(shareLink()) + '"></div>'
         + '<div class="acts"><button type="button" class="btn primary" data-copy-link="1">Copy link</button>'
-        + '<button type="button" class="btn" data-disconnect="1">Disconnect</button></div>'
-        + '<p class="synctxt">Board code: <b>' + esc(boardId) + '</b></p>';
+        + '<button type="button" class="btn" data-disconnect="1">Sign out of this phone</button></div>'
+        + '<p class="fnote" style="margin:0">Whoever opens that link and knows the passcode can log wins. '
+        + 'Signing out clears the passcode and the write access from this phone only.</p>';
+    } else if(mode === 'cloud'){
+      rows = '<p class="synctxt">This page is served from <b>' + esc(gh.owner) + '/' + esc(gh.repo) + '</b>, '
+        + 'so the board can live in that same repo &mdash; one encrypted file, committed by the page itself.</p>'
+        + '<form id="gh-form">'
+        + '<div><label for="gh-token">Repo token</label>'
+        + '<input class="inp" id="gh-token" name="gh-token" type="password" autocomplete="off"'
+        + ' autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="github_pat_..." required></div>'
+        + '<div style="margin-top:8px"><label for="gh-pass">Passcode for the board</label>'
+        + '<input class="inp" id="gh-pass" name="gh-pass" type="password" autocomplete="new-password"'
+        + ' autocapitalize="off" autocorrect="off" spellcheck="false" required></div>'
+        + '<div style="margin-top:8px"><label for="gh-pass2">Type the passcode again</label>'
+        + '<input class="inp" id="gh-pass2" name="gh-pass2" type="password" autocomplete="new-password"'
+        + ' autocapitalize="off" autocorrect="off" spellcheck="false" required></div>'
+        + (lockErr ? '<p class="sheeterr" style="margin-top:10px">' + esc(lockErr) + '</p>' : '')
+        + '<div class="acts"><button type="submit" class="btn primary">' + (lockBusy ? 'Setting up…' : 'Set up the board') + '</button></div>'
+        + '<p class="fnote" style="margin:0">The token is stored on this phone and, encrypted with the passcode, in the repo &mdash; '
+        + 'so the other phone needs the passcode and nothing else. Make a fine-grained token limited to this one repo, '
+        + 'with Contents set to Read and write.</p>'
+        + '</form>'
+        + '<div style="margin-top:12px"><label for="gh-repo">Repo this page reads from</label>'
+        + '<input class="inp" id="gh-repo" type="text" readonly value="' + esc(gh.owner + '/' + gh.repo + ' (' + gh.branch + ')') + '"></div>';
     } else {
-      rows = '<p class="synctxt">Right now the score saves in this browser only. '
-        + 'Connect a shared board and both phones keep the same score &mdash; no accounts, no sign-in.</p>'
-        + '<div class="acts"><button type="button" class="btn primary" data-create-board="1">Create a shared board</button></div>'
-        + '<form id="join-form"><label for="sy-code">Or paste a board code</label>'
-        + '<input class="inp" id="sy-code" name="sy-code" type="text" autocomplete="off" placeholder="e.g. 1234567890123456789">'
-        + '<div class="acts"><button type="submit" class="btn">Connect</button></div></form>'
-        + '<p class="synctxt">No code yet and the button above fails? Open <b>jsonblob.com</b> in a tab, press Create, '
-        + 'then copy the long number at the end of that page&rsquo;s address and paste it here.</p>';
+      rows = '<p class="synctxt">This copy saves in this browser only. '
+        + 'Open the page from its GitHub address and it can share one board across both phones.</p>';
     }
     var err = syncErr ? '<div class="banner"><b>Sync problem.</b> ' + esc(syncErr) + '</div>' : '';
-    return '<section class="bets-head"><h1>Settings</h1><p>' + (mode === 'cloud' ? 'Shared board' : mode === 'artifact' ? 'Saved inside Claude' : 'This device only') + '</p></section>'
+    var sub = mode === 'cloud' ? (gh.token && !needsSetup ? 'Shared board' : 'Ready to set up')
+            : mode === 'artifact' ? 'Saved inside Claude' : 'This device only';
+    return '<section class="bets-head"><h1>Settings</h1><p>' + sub + '</p></section>'
       + '<section class="setgroup"><h3>' + IC_CLOCK + 'Time format</h3>'
       + '<div class="seg">'
       + '<button type="button" class="segbtn" data-fmt="12" aria-pressed="' + (hour24 ? 'false' : 'true') + '">12-hour</button>'
@@ -1469,11 +1590,11 @@ function APP(){
       + '<p class="synctxt">' + (hour24 ? 'Times read 19:30.' : 'Times read 7:30 PM.')
       + ' This is a per-phone choice &mdash; it does not change what the other phone sees, and the pickers in the win sheet still follow your phone&rsquo;s own clock setting.</p>'
       + '</section>'
-      // Once a board is connected this is setup you rarely touch again, so it folds away.
+      // Once the board is running this is setup you rarely touch again, so it folds away.
       + '<section class="setgroup"><div class="lhead">'
       + '<button class="lhtoggle" data-sync-toggle="1" aria-expanded="' + (syncOpen ? 'true' : 'false') + '">'
       + '<span class="chev">&#9660;</span>Sync and sharing'
-      + (syncOpen ? '' : '<span class="cnt">' + (mode === 'cloud' ? 'Connected' : mode === 'artifact' ? 'Inside Claude' : 'Not shared') + '</span>')
+      + (syncOpen ? '' : '<span class="cnt">' + (mode === 'cloud' && gh.token ? 'Connected' : mode === 'artifact' ? 'Inside Claude' : 'Not shared') + '</span>')
       + '</button></div>'
       + (syncOpen ? '<div class="betform">' + rows + '</div>' + err : '')
       + '</section>'
@@ -1481,33 +1602,17 @@ function APP(){
   }
 
   function passcodeSection(){
-    if(mode !== 'cloud') return '';
+    if(mode !== 'cloud' || !gh.token || needsSetup) return '';
     var body;
     if(!subtle()){
       body = '<p class="synctxt">This browser will not do the encryption a passcode needs. '
         + 'It works on the https link &mdash; not on a file opened straight off the phone.</p>';
-    } else if(cryptoKey){
-      body = '<p class="synctxt"><b>This board is locked.</b> What sits on the sync service is scrambled &mdash; '
-        + 'the passcode never leaves your phones, so nobody with the link can read the score, the bets or the photos without it.</p>'
-        + '<div class="acts"><button type="button" class="btn" data-pass-forget="1">Forget it on this phone</button>'
-        + '<button type="button" class="btn" data-pass-off="1">Remove the lock</button></div>'
-        + '<p class="fnote" style="margin:0">Forgetting only clears this phone &mdash; the board stays locked and asks again next time.</p>';
     } else {
-      body = '<p class="synctxt">Right now anyone with the link can read and change the board. '
-        + 'A passcode encrypts it before it leaves the phone, so the sync service only ever holds gibberish.</p>'
-        + '<form id="pass-form">'
-        + '<div><label for="pw1">Passcode</label>'
-        + '<input class="inp" id="pw1" name="pw1" type="password" autocomplete="new-password"'
-        + ' autocapitalize="off" autocorrect="off" spellcheck="false" required></div>'
-        + '<div style="margin-top:8px"><label for="pw2">Type it again</label>'
-        + '<input class="inp" id="pw2" name="pw2" type="password" autocomplete="new-password"'
-        + ' autocapitalize="off" autocorrect="off" spellcheck="false" required></div>'
-        + (lockErr ? '<p class="sheeterr" style="margin-top:10px">' + esc(lockErr) + '</p>' : '')
-        + '<div class="acts"><button type="submit" class="btn primary">'
-        + (lockBusy ? 'Locking…' : 'Lock this board') + '</button></div>'
-        + '<p class="fnote" style="margin:0">Cassie types the same passcode once on her phone. '
-        + 'There is no reset and no recovery &mdash; if you both forget it, the board is gone.</p>'
-        + '</form>';
+      body = '<p class="synctxt"><b>The board is locked.</b> The file in the repo is scrambled, and so is the write access '
+        + 'stored beside it &mdash; the passcode never leaves your phones, so a stranger who finds the repo sees nothing but noise.</p>'
+        + '<div class="acts"><button type="button" class="btn" data-pass-forget="1">Forget it on this phone</button></div>'
+        + '<p class="fnote" style="margin:0">Forgetting clears the passcode and the write access here only. '
+        + 'The board stays locked and asks again next time.</p>';
     }
     return '<section class="setgroup"><h3>' + IC_LOCK + 'Passcode</h3>'
       + '<div class="betform">' + body + '</div></section>';
@@ -1517,7 +1622,7 @@ function APP(){
     // No save-back channel on this page (published without it, or this viewer can't write).
     // Keep the board usable and say plainly where the score is going.
     localMode = true;
-    mode = boardId ? 'cloud' : 'local';
+    mode = 'local';
     render();
     save();
   }
@@ -1610,46 +1715,32 @@ function APP(){
       var phrase = pEl.value || '';
       if(!phrase){ pEl.focus(); return; }
       lockErr = ''; setStatus('saving');
-      deriveKey(phrase, cryptoSalt).then(function(k){
-        cryptoKey = k;
-        rememberPass(phrase);
-        return pullCloud(true).then(function(){
-          if(cryptoKey) startPolling(); else forgetPass();
-        });
-      }, function(){
-        lockErr = 'This browser could not work out the key. Try again.';
+      unlockWith(phrase).catch(function(e){
+        cryptoKey = null; gh.token = ''; saveGh(); forgetPass();
+        locked = true;
+        lockErr = (e && e.message && /passcode|decrypt/i.test(e.message)) ? e.message : 'That passcode did not open this board.';
         status = 'idle'; render();
       });
       return;
     }
-    var pf = ev.target.closest('#pass-form');
-    if(pf){
+    var gf = ev.target.closest('#gh-form');
+    if(gf){
       ev.preventDefault();
-      var a1 = document.getElementById('pw1'), a2 = document.getElementById('pw2');
-      var p1 = a1.value || '', p2 = a2.value || '';
-      if(p1.length < 4){ lockErr = 'Use at least four characters.'; render(); document.getElementById('pw1').focus(); return; }
-      if(p1 !== p2){ lockErr = 'Those two do not match.'; render(); document.getElementById('pw2').focus(); return; }
+      var tk = (document.getElementById('gh-token').value || '').trim();
+      var q1 = document.getElementById('gh-pass').value || '';
+      var q2 = document.getElementById('gh-pass2').value || '';
+      if(!tk){ lockErr = 'Paste the repo token first.'; render(); return; }
+      if(q1.length < 8){ lockErr = 'Use at least eight characters &mdash; this one guards the repo too.'; render(); return; }
+      if(q1 !== q2){ lockErr = 'Those two passcodes do not match.'; render(); return; }
       lockErr = ''; lockBusy = true; render(); setStatus('saving');
-      var salt = b64(window.crypto.getRandomValues(new Uint8Array(16)));
-      deriveKey(p1, salt).then(function(k){
-        cryptoKey = k; cryptoSalt = salt;
-        rememberPass(p1);
+      setUpBoard(tk, q1).then(function(){
+        lockBusy = false; render();
+      }, function(e){
         lockBusy = false;
-        return pushCloud().then(function(){ render(); });
-      }, function(){
-        lockBusy = false;
-        lockErr = 'This browser could not set a passcode.';
+        gh.token = ''; saveGh(); forgetPass(); cryptoKey = null;
+        lockErr = (e && e.message) ? e.message : 'That did not work.';
         status = 'idle'; render();
       });
-      return;
-    }
-    var jf = ev.target.closest('#join-form');
-    if(jf){
-      ev.preventDefault();
-      var codeEl = document.getElementById('sy-code');
-      var code = (codeEl.value || '').trim().replace(/[^A-Za-z0-9_\-]/g, '');
-      if(!code){ codeEl.focus(); return; }
-      connectBoard(code, true);
       return;
     }
     var bf = ev.target.closest('#bet-form');
@@ -1736,7 +1827,7 @@ function APP(){
       if(onScrim || ev.target.closest('button[data-close-sheet]')){ draft = null; render(); return; }
       return;   // everything else inside the sheet is a plain form control
     }
-    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-create-board],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-betgroup],[data-fmt],[data-pass-forget],[data-pass-off],[data-sort],[data-cal],[data-day]');
+    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-betgroup],[data-fmt],[data-pass-forget],[data-sort],[data-cal],[data-day]');
     if(!t) return;
     if(t.hasAttribute('data-open-up')){ chooser = true; render(); return; }
     if(t.hasAttribute('data-bet-open')){ betView = t.getAttribute('data-bet-open'); render(); return; }
@@ -1786,19 +1877,7 @@ function APP(){
       }
       return;
     }
-    if(t.hasAttribute('data-pass-forget')){
-      forgetPass(); locked = true; lockErr = '';
-      if(poller){ clearInterval(poller); poller = null; }
-      render(); return;
-    }
-    if(t.hasAttribute('data-pass-off')){
-      cryptoKey = null; cryptoSalt = '';
-      forgetPass();
-      setStatus('saving');
-      pushCloud().then(function(){ render(); });
-      return;
-    }
-    if(t.hasAttribute('data-create-board')){ createBoard(); return; }
+    if(t.hasAttribute('data-pass-forget')){ disconnectBoard(); locked = true; render(); return; }
     if(t.hasAttribute('data-disconnect')){ disconnectBoard(); return; }
     if(t.hasAttribute('data-showall')){ showAll = true; render(); return; }
     if(readOnly) return;
