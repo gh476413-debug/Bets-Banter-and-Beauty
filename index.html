@@ -10,7 +10,7 @@
 <style id="app-css"></style>
 </head>
 <body>
-<script id="state" type="application/json">{"v": 1, "players": {"a": "Cassie", "b": "Grant"}, "games": [{"id": "cribbage", "name": "Cribbage", "rule": "Peg Your Way to Victory"}, {"id": "chess", "name": "Chess", "rule": "Queens Rule"}, {"id": "darts", "name": "Darts", "rule": "Cricket \u2013 Chirp Away"}, {"id": "pool", "name": "Pool", "rule": "Racks and Balls"}, {"id": "pickleball", "name": "Pickleball", "rule": "Paddled in the Kitchen"}, {"id": "shuffleboard", "name": "Shuffleboard", "rule": "Slippin\u2019 and Slidin\u2019"}, {"id": "speed", "name": "Speed", "rule": "See Who Can Finish Faster", "custom": true}, {"id": "golf-card-game", "name": "Golf (Card Game)", "rule": "Do It In Pairs", "custom": true}], "log": [{"id": "mu3hewsjpluvu", "game": "darts", "winner": "b", "t": "2026-09-12T02:28:00.000Z", "loc": "The Ranch", "notime": true}, {"id": "mu3hbaznlmzyq", "game": "darts", "winner": "a", "t": "2026-09-13T02:25:00.000Z", "loc": "Sonny's", "notime": true}, {"id": "mu3hcwh1kcnid", "game": "pool", "winner": "a", "t": "2026-09-13T02:27:00.000Z", "loc": "Sonny's", "notime": true}, {"id": "mu3h6ut6ij3ys", "game": "chess", "winner": "a", "t": "2026-09-14T02:22:00.000Z", "loc": "Greenhouse", "notime": true, "nobet": true}, {"id": "mu3hafiadu6l6", "game": "chess", "winner": "b", "t": "2026-09-14T02:25:00.000Z", "loc": "Greenhouse", "notime": true}, {"id": "mu3hea4g78q57", "game": "cribbage", "winner": "b", "t": "2026-09-14T02:28:00.000Z", "loc": "Venice Beach Bar", "notime": true, "nobet": true}, {"id": "mu3k98kw6177n", "game": "chess", "winner": "a", "t": "2026-09-16T03:48:00.000Z", "loc": "Greenhouse"}, {"id": "mu3p438iqgzmk", "game": "golf-card-game", "winner": "b", "t": "2026-09-16T06:04:00.000Z", "loc": "Greenhouse"}, {"id": "mu3p4fy74zxau", "game": "speed", "winner": "a", "t": "2026-09-16T06:04:00.000Z", "notime": true, "loc": "Greenhouse"}], "bets": [{"id": "mu3haz83z6yxn", "text": "Loser buys beer", "owedBy": "a", "done": true, "t": "2026-09-16T02:25:44.403Z", "matchId": "mu3hafiadu6l6", "doneAt": "2026-09-16T02:29:44.700Z", "by": "a"}, {"id": "mu3hcrovir8uj", "text": "Classic diner breakfast date", "owedBy": "b", "done": true, "t": "2026-09-16T02:27:07.951Z", "matchId": "mu3hbaznlmzyq", "doneAt": "2026-09-16T02:29:51.446Z", "by": "b"}, {"id": "mu3hdw2bay4tf", "text": "Sleepover at winner's choice of house", "owedBy": "b", "done": true, "t": "2026-09-16T02:28:00.275Z", "matchId": "mu3hcwh1kcnid", "doneAt": "2026-09-16T02:29:52.103Z", "by": "b"}, {"id": "mu3hfr4dd5922", "text": "Kiss!", "owedBy": "a", "done": true, "t": "2026-09-16T02:29:27.181Z", "matchId": "mu3hewsjpluvu", "doneAt": "2026-09-16T02:29:52.860Z", "by": "a"}, {"id": "mu3kabe59o9rm", "text": "Loser hosts dinner making party", "owedBy": "b", "done": false, "t": "2026-09-16T03:49:12.365Z", "matchId": "mu3k98kw6177n", "by": "b"}, {"id": "mu3p4c77ft0ya", "text": "Loser buys Dodger Dawg/beer", "owedBy": "a", "by": "b", "done": false, "t": "2026-09-16T06:04:31.555Z", "matchId": "mu3p438iqgzmk"}, {"id": "mu3p553fu016j", "text": "Loser makes fancy drinks with dinner", "owedBy": "b", "by": "a", "done": false, "t": "2026-09-16T06:05:09.003Z", "matchId": "mu3p4fy74zxau"}]}</script>
+<script id="state" type="application/json">{"v": 1, "players": {"a": "Cassie", "b": "Grant"}, "games": [{"id": "cribbage", "name": "Cribbage", "rule": "Peg Your Way to Victory"}, {"id": "chess", "name": "Chess", "rule": "Queens Rule"}, {"id": "darts", "name": "Darts", "rule": "Cricket \u2013 Chirp Away"}, {"id": "pool", "name": "Pool", "rule": "Racks and Balls"}, {"id": "pickleball", "name": "Pickleball", "rule": "Paddled in the Kitchen"}, {"id": "shuffleboard", "name": "Shuffleboard", "rule": "Slippin\u2019 and Slidin\u2019"}, {"id": "speed", "name": "Speed", "rule": "See Who Can Finish Faster", "custom": true}, {"id": "golf-card-game", "name": "Golf (Card Game)", "rule": "Do It In Pairs", "custom": true}], "log": [], "bets": []}</script>
 <div id="root"></div>
 <script>
 function APP(){
@@ -48,6 +48,10 @@ function APP(){
     + '.gear:hover{border-color:var(--ink);color:var(--ink)}'
     + '.gear[aria-current="page"]{border-color:var(--ink);color:var(--ink);background:var(--surface-2)}'
     + '.gear:focus-visible{outline:2px solid var(--ink);outline-offset:2px}'
+    + '.lockwrap{padding-top:16vh;max-width:420px}'
+    + '.lockmark{font-family:var(--f-display);font-weight:400;font-size:clamp(30px,8vw,40px);line-height:1.05;margin:0 0 10px;letter-spacing:-.01em}'
+    + '.lockwrap .lead{margin:0 0 18px;font-size:14.5px;color:var(--muted)}'
+    + '.lockout{margin:14px 0 0;text-align:center}'
     + '.setgroup{margin-top:22px}'
     + '.setgroup h3{margin:0 0 9px;display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;'
     + 'letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}'
@@ -103,6 +107,7 @@ function APP(){
     + '.betgroup{margin-top:26px}'
     + '.betgroup h3{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}'
     + '.betgroup .lhead{margin-bottom:9px}'
+    + '.setgroup .lhead{margin-bottom:9px}'
     + '.betlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}'
     + '.bet{display:flex;align-items:flex-start;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 13px;box-shadow:var(--shadow)}'
     + '.bet.settled{background:transparent;box-shadow:none;border-style:dashed}'
@@ -319,6 +324,7 @@ function APP(){
   var LS_KEY = 'battles-bets-beauty-v1';
   var FMT_KEY = 'battles-bets-beauty-fmt';
   var ID_KEY = 'battles-bets-beauty-board';
+  var PASS_KEY = 'battles-bets-beauty-pass';
   var CLOUD_BASE = 'https://jsonblob.com/api/jsonBlob';
 
   // Three ways this page can keep score:
@@ -331,7 +337,9 @@ function APP(){
     boardId = (String(location.hash).match(/[#&]b=([A-Za-z0-9_\-]+)/) || [])[1]
            || window.localStorage.getItem(ID_KEY) || '';
   }catch(err){ boardId = ''; }
-  var mode = localMode ? (boardId ? 'cloud' : 'local') : 'artifact';
+  // A connected board wins over everything: once the score lives there, the
+  // copy inside Claude is just another window onto it rather than its own ledger.
+  var mode = boardId ? 'cloud' : (localMode ? 'local' : 'artifact');
   var syncErr = '';
   var lastRemote = '';
   var poller = null;
@@ -363,9 +371,20 @@ function APP(){
   var undoTimer = null;
   var ledgerOpen = true;
   var calOpen = true;
+  // Open until a board exists; after that it is settled business.
+  var syncOpen = !boardId;
   // A viewing preference, so it lives on this phone rather than on the shared board.
   var hour24 = false;
   try{ hour24 = window.localStorage.getItem(FMT_KEY) === '24'; }catch(err){}
+  // Passcode state. The phrase is remembered on this phone only; the key is
+  // derived from it plus the salt that travels with the board.
+  var passPhrase = '';
+  try{ passPhrase = window.localStorage.getItem(PASS_KEY) || ''; }catch(err){}
+  var cryptoKey = null;
+  var cryptoSalt = '';
+  var locked = false;
+  var lockErr = '';
+  var lockBusy = false;
   var openOpen = true;
   var doneOpen = false;
   var ledgerSort = 'date';
@@ -618,6 +637,12 @@ function APP(){
     + ' L2.73 9.52 L5.21 5.21 L8.06 6.96 Z"'
     + ' fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'
     + '<circle cx="12" cy="12" r="3.3" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+    + '</svg>';
+
+  var IC_LOCK = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<rect x="4.4" y="10.2" width="15.2" height="11.2" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+    + '<path d="M8.1 10.2V7.6a3.9 3.9 0 0 1 7.8 0v2.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '<circle cx="12" cy="15.6" r="1.5" fill="currentColor" stroke="none"/>'
     + '</svg>';
 
   var IC_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true">'
@@ -1108,6 +1133,7 @@ function APP(){
   }
 
   function render(){
+    if(locked){ root.innerHTML = lockView(); popKey = null; return; }
     var t = tally();
     var label = statusLabel(status);
     var banner = '';
@@ -1212,6 +1238,84 @@ function APP(){
     }
   }
 
+  // ---- the passcode -------------------------------------------------------
+  // With a passcode set, nothing readable leaves the phone: the board is
+  // encrypted here and the sync service only ever holds ciphertext. That also
+  // means a forgotten passcode is the end of the board - there is no reset.
+  function subtle(){
+    return (window.crypto && window.crypto.subtle && window.TextEncoder) ? window.crypto.subtle : null;
+  }
+
+  function b64(buf){
+    var a = new Uint8Array(buf), s = '';
+    for(var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+    return btoa(s);
+  }
+
+  function unb64(s){
+    var bin = atob(String(s || '')), a = new Uint8Array(bin.length);
+    for(var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    return a;
+  }
+
+  function deriveKey(phrase, saltB64){
+    var sub = subtle();
+    if(!sub) return Promise.reject(new Error('This browser cannot lock the board.'));
+    return sub.importKey('raw', new TextEncoder().encode(phrase), {name:'PBKDF2'}, false, ['deriveKey'])
+      .then(function(base){
+        return sub.deriveKey({name:'PBKDF2', salt:unb64(saltB64), iterations:200000, hash:'SHA-256'},
+                             base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+      });
+  }
+
+  function sealState(){
+    var iv = window.crypto.getRandomValues(new Uint8Array(12));
+    return subtle().encrypt({name:'AES-GCM', iv:iv}, cryptoKey, new TextEncoder().encode(JSON.stringify(STATE)))
+      .then(function(ct){ return {enc:1, v:1, salt:cryptoSalt, iv:b64(iv), ct:b64(ct)}; });
+  }
+
+  function openBlob(blob){
+    return subtle().decrypt({name:'AES-GCM', iv:unb64(blob.iv)}, cryptoKey, unb64(blob.ct))
+      .then(function(pt){ return JSON.parse(new TextDecoder().decode(pt)); });
+  }
+
+  function rememberPass(phrase){
+    passPhrase = phrase;
+    try{ window.localStorage.setItem(PASS_KEY, phrase); }catch(err){}
+  }
+
+  function forgetPass(){
+    passPhrase = ''; cryptoKey = null;
+    try{ window.localStorage.removeItem(PASS_KEY); }catch(err){}
+  }
+
+  function adopt(data){
+    var s = JSON.stringify(data);
+    if(s !== lastRemote){
+      lastRemote = s;
+      STATE = data;
+      if(!STATE.bets) STATE.bets = [];
+      mirrorLocal();
+    }
+  }
+
+  function lockView(){
+    var other = STATE.players && STATE.players.b ? esc(STATE.players.a) + ' and ' + esc(STATE.players.b) : 'you both';
+    return '<div class="wrap lockwrap">'
+      + '<h1 class="lockmark">Bets, Banter, and Beauty</h1>'
+      + '<p class="lead">This board is locked. Enter the passcode ' + other + ' share.</p>'
+      + '<form class="betform" id="lock-form">'
+      + '<div><label for="lock-pass">Passcode</label>'
+      + '<input class="inp" id="lock-pass" name="lock-pass" type="password" autocomplete="current-password"'
+      + ' autocapitalize="off" autocorrect="off" spellcheck="false" required></div>'
+      + (lockErr ? '<p class="sheeterr">' + esc(lockErr) + '</p>' : '')
+      + '<div class="acts"><button type="submit" class="btn primary">Unlock</button></div>'
+      + '<p class="fnote" style="margin:0">Unlocking is remembered on this phone until you clear it in Settings.</p>'
+      + '</form>'
+      + '<p class="fnote lockout">Wrong board? <button type="button" class="linkish" data-disconnect="1">Disconnect from it</button></p>'
+      + '</div>';
+  }
+
   // ---- shared board (cloud) ----------------------------------------------
   function shareLink(){
     return location.origin + location.pathname + (boardId ? '#b=' + boardId : '');
@@ -1220,6 +1324,7 @@ function APP(){
   function startPolling(){
     if(poller || mode !== 'cloud') return;
     poller = setInterval(function(){
+      if(locked) return;                                                        // nothing to refresh until somebody types the passcode
       if(draft || photoView || chooser || betView || adding || timer) return;   // don't yank an open sheet or a pending save out from under anyone
       pullCloud(false);
     }, 12000);
@@ -1233,15 +1338,32 @@ function APP(){
         return r.json();
       })
       .then(function(data){
-        if(!data || !data.games || !data.log) throw new Error('That code points at something that is not a scoreboard.');
-        var s = JSON.stringify(data);
-        syncErr = '';
-        if(s !== lastRemote){
-          lastRemote = s;
-          STATE = data;
-          if(!STATE.bets) STATE.bets = [];
-          mirrorLocal();
+        if(data && data.enc){
+          if(!subtle()) throw new Error('This board is passcode-locked, and this browser has no way to unlock it. Open the https link rather than the file itself.');
+          cryptoSalt = data.salt;
+          var ready = cryptoKey ? Promise.resolve(cryptoKey)
+                    : (passPhrase ? deriveKey(passPhrase, data.salt).then(function(k){ cryptoKey = k; return k; })
+                                  : Promise.reject({ needPass: true }));
+          return ready.then(function(){ return openBlob(data); })
+            .then(function(plain){
+              if(!plain || !plain.games || !plain.log) throw new Error('That code points at something that is not a scoreboard.');
+              locked = false; lockErr = ''; syncErr = '';
+              adopt(plain);
+              status = 'idle';
+              render();
+            }, function(err){
+              // A bad passcode and a missing one land in the same place: the lock screen.
+              cryptoKey = null;
+              locked = true;
+              lockErr = (err && err.needPass) ? '' : 'That passcode did not open this board.';
+              if(!(err && err.needPass)) forgetPass();
+              syncErr = ''; status = 'idle';
+              render();
+            });
         }
+        if(!data || !data.games || !data.log) throw new Error('That code points at something that is not a scoreboard.');
+        locked = false; syncErr = '';
+        adopt(data);
         status = 'idle';
         render();
       })
@@ -1253,15 +1375,19 @@ function APP(){
   }
 
   function pushCloud(){
-    var body = JSON.stringify(STATE);
-    return fetch(CLOUD_BASE + '/' + boardId, {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-        body: body
+    var plain = JSON.stringify(STATE);
+    var prep = cryptoKey ? sealState().then(function(o){ return JSON.stringify(o); })
+                         : Promise.resolve(plain);
+    return prep.then(function(body){
+        return fetch(CLOUD_BASE + '/' + boardId, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: body
+        });
       })
       .then(function(r){
         if(!r.ok) throw new Error('The server answered ' + r.status + '.');
-        lastRemote = body; syncErr = ''; setStatus('saved');
+        lastRemote = plain; syncErr = ''; setStatus('saved');
       })
       .catch(function(e){
         syncErr = e.message || String(e); status = 'error'; render();
@@ -1308,12 +1434,20 @@ function APP(){
   function settingsView(){
     var rows = '';
     if(mode === 'artifact'){
-      rows = '<p class="synctxt">This copy is running inside Claude and saves itself there. '
-        + 'The shared-board settings below only matter for a copy hosted somewhere else.</p>';
+      rows = '<p class="synctxt">This copy runs inside Claude and saves itself there, which is why it needs a Claude sign-in. '
+        + 'Move the score to a shared board and everything on it &mdash; matches, bets, photos &mdash; goes with it, '
+        + 'ready for the hosted copy to pick up. This page then becomes another window onto that same board.</p>'
+        + '<div class="acts"><button type="button" class="btn primary" data-create-board="1">Move it to a shared board</button></div>'
+        + '<form id="join-form"><label for="sy-code">Or join a board that already exists</label>'
+        + '<input class="inp" id="sy-code" name="sy-code" type="text" autocomplete="off" placeholder="e.g. 1234567890123456789">'
+        + '<div class="acts"><button type="submit" class="btn">Connect</button></div></form>'
+        + '<p class="fnote" style="margin:0">Joining an existing board replaces what is on this page with what is on that board.</p>';
     } else if(mode === 'cloud'){
       rows = '<p class="synctxt"><b>Connected.</b> The score lives on a shared board, so both phones see the same numbers. '
         + 'It refreshes every few seconds and whenever you tap.</p>'
-        + '<div><label for="sy-link">' + IC_PIN + 'Share this link</label>'
+        + (localMode ? '' : '<p class="synctxt"><b>This copy is the one inside Claude</b>, so the link below points back here '
+            + 'and still needs a sign-in. Send the board code instead, or open your hosted copy and copy the link from there.</p>')
+        + '<div><label for="sy-link">' + IC_PIN + (localMode ? 'Share this link' : 'This page&rsquo;s link')  + '</label>'
         + '<input class="inp" id="sy-link" type="text" readonly value="' + esc(shareLink()) + '"></div>'
         + '<div class="acts"><button type="button" class="btn primary" data-copy-link="1">Copy link</button>'
         + '<button type="button" class="btn" data-disconnect="1">Disconnect</button></div>'
@@ -1338,8 +1472,48 @@ function APP(){
       + '<p class="synctxt">' + (hour24 ? 'Times read 19:30.' : 'Times read 7:30 PM.')
       + ' This is a per-phone choice &mdash; it does not change what the other phone sees, and the pickers in the win sheet still follow your phone&rsquo;s own clock setting.</p>'
       + '</section>'
-      + '<section class="setgroup"><h3>Sync and sharing</h3>'
-      + '<div class="betform">' + rows + '</div>' + err + '</section>';
+      // Once a board is connected this is setup you rarely touch again, so it folds away.
+      + '<section class="setgroup"><div class="lhead">'
+      + '<button class="lhtoggle" data-sync-toggle="1" aria-expanded="' + (syncOpen ? 'true' : 'false') + '">'
+      + '<span class="chev">&#9660;</span>Sync and sharing'
+      + (syncOpen ? '' : '<span class="cnt">' + (mode === 'cloud' ? 'Connected' : mode === 'artifact' ? 'Inside Claude' : 'Not shared') + '</span>')
+      + '</button></div>'
+      + (syncOpen ? '<div class="betform">' + rows + '</div>' + err : '')
+      + '</section>'
+      + passcodeSection();
+  }
+
+  function passcodeSection(){
+    if(mode !== 'cloud') return '';
+    var body;
+    if(!subtle()){
+      body = '<p class="synctxt">This browser will not do the encryption a passcode needs. '
+        + 'It works on the https link &mdash; not on a file opened straight off the phone.</p>';
+    } else if(cryptoKey){
+      body = '<p class="synctxt"><b>This board is locked.</b> What sits on the sync service is scrambled &mdash; '
+        + 'the passcode never leaves your phones, so nobody with the link can read the score, the bets or the photos without it.</p>'
+        + '<div class="acts"><button type="button" class="btn" data-pass-forget="1">Forget it on this phone</button>'
+        + '<button type="button" class="btn" data-pass-off="1">Remove the lock</button></div>'
+        + '<p class="fnote" style="margin:0">Forgetting only clears this phone &mdash; the board stays locked and asks again next time.</p>';
+    } else {
+      body = '<p class="synctxt">Right now anyone with the link can read and change the board. '
+        + 'A passcode encrypts it before it leaves the phone, so the sync service only ever holds gibberish.</p>'
+        + '<form id="pass-form">'
+        + '<div><label for="pw1">Passcode</label>'
+        + '<input class="inp" id="pw1" name="pw1" type="password" autocomplete="new-password"'
+        + ' autocapitalize="off" autocorrect="off" spellcheck="false" required></div>'
+        + '<div style="margin-top:8px"><label for="pw2">Type it again</label>'
+        + '<input class="inp" id="pw2" name="pw2" type="password" autocomplete="new-password"'
+        + ' autocapitalize="off" autocorrect="off" spellcheck="false" required></div>'
+        + (lockErr ? '<p class="sheeterr" style="margin-top:10px">' + esc(lockErr) + '</p>' : '')
+        + '<div class="acts"><button type="submit" class="btn primary">'
+        + (lockBusy ? 'Locking…' : 'Lock this board') + '</button></div>'
+        + '<p class="fnote" style="margin:0">Cassie types the same passcode once on her phone. '
+        + 'There is no reset and no recovery &mdash; if you both forget it, the board is gone.</p>'
+        + '</form>';
+    }
+    return '<section class="setgroup"><h3>' + IC_LOCK + 'Passcode</h3>'
+      + '<div class="betform">' + body + '</div></section>';
   }
 
   function goLocal(){
@@ -1430,6 +1604,46 @@ function APP(){
       ev.preventDefault();
       if(readOnly || !draft) return;
       commitSheet();
+      return;
+    }
+    var lf = ev.target.closest('#lock-form');
+    if(lf){
+      ev.preventDefault();
+      var pEl = document.getElementById('lock-pass');
+      var phrase = pEl.value || '';
+      if(!phrase){ pEl.focus(); return; }
+      lockErr = ''; setStatus('saving');
+      deriveKey(phrase, cryptoSalt).then(function(k){
+        cryptoKey = k;
+        rememberPass(phrase);
+        return pullCloud(true).then(function(){
+          if(cryptoKey) startPolling(); else forgetPass();
+        });
+      }, function(){
+        lockErr = 'This browser could not work out the key. Try again.';
+        status = 'idle'; render();
+      });
+      return;
+    }
+    var pf = ev.target.closest('#pass-form');
+    if(pf){
+      ev.preventDefault();
+      var a1 = document.getElementById('pw1'), a2 = document.getElementById('pw2');
+      var p1 = a1.value || '', p2 = a2.value || '';
+      if(p1.length < 4){ lockErr = 'Use at least four characters.'; render(); document.getElementById('pw1').focus(); return; }
+      if(p1 !== p2){ lockErr = 'Those two do not match.'; render(); document.getElementById('pw2').focus(); return; }
+      lockErr = ''; lockBusy = true; render(); setStatus('saving');
+      var salt = b64(window.crypto.getRandomValues(new Uint8Array(16)));
+      deriveKey(p1, salt).then(function(k){
+        cryptoKey = k; cryptoSalt = salt;
+        rememberPass(p1);
+        lockBusy = false;
+        return pushCloud().then(function(){ render(); });
+      }, function(){
+        lockBusy = false;
+        lockErr = 'This browser could not set a passcode.';
+        status = 'idle'; render();
+      });
       return;
     }
     var jf = ev.target.closest('#join-form');
@@ -1525,12 +1739,13 @@ function APP(){
       if(onScrim || ev.target.closest('button[data-close-sheet]')){ draft = null; render(); return; }
       return;   // everything else inside the sheet is a plain form control
     }
-    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-create-board],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-betgroup],[data-fmt],[data-sort],[data-cal],[data-day]');
+    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-create-board],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-betgroup],[data-fmt],[data-pass-forget],[data-pass-off],[data-sort],[data-cal],[data-day]');
     if(!t) return;
     if(t.hasAttribute('data-open-up')){ chooser = true; render(); return; }
     if(t.hasAttribute('data-bet-open')){ betView = t.getAttribute('data-bet-open'); render(); return; }
     if(t.hasAttribute('data-ledger-toggle')){ ledgerOpen = !ledgerOpen; render(); return; }
     if(t.hasAttribute('data-cal-toggle')){ calOpen = !calOpen; render(); return; }
+    if(t.hasAttribute('data-sync-toggle')){ syncOpen = !syncOpen; render(); return; }
     if(t.hasAttribute('data-fmt')){
       hour24 = t.getAttribute('data-fmt') === '24';
       try{ window.localStorage.setItem(FMT_KEY, hour24 ? '24' : '12'); }catch(err){}
@@ -1572,6 +1787,18 @@ function APP(){
         var f = document.getElementById('sy-link');
         if(f){ f.select(); done(); }
       }
+      return;
+    }
+    if(t.hasAttribute('data-pass-forget')){
+      forgetPass(); locked = true; lockErr = '';
+      if(poller){ clearInterval(poller); poller = null; }
+      render(); return;
+    }
+    if(t.hasAttribute('data-pass-off')){
+      cryptoKey = null; cryptoSalt = '';
+      forgetPass();
+      setStatus('saving');
+      pushCloud().then(function(){ render(); });
       return;
     }
     if(t.hasAttribute('data-create-board')){ createBoard(); return; }
@@ -1626,11 +1853,11 @@ function APP(){
   });
 
   render();
-  if(!localMode){
-    getApi().then(function(a){ if(!a){ localMode = true; mode = boardId ? 'cloud' : 'local'; restoreLocal(); render(); if(mode === 'cloud'){ pullCloud(true).then(startPolling); } } });
-  } else if(mode === 'cloud'){
+  if(mode === 'cloud'){
     setStatus('saving');
     pullCloud(true).then(startPolling);
+  } else if(!localMode){
+    getApi().then(function(a){ if(!a){ localMode = true; mode = 'local'; restoreLocal(); render(); } });
   }
 }
 APP();
