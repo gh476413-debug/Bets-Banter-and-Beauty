@@ -276,6 +276,7 @@ function APP(){
     + 'bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:10px;'
     + 'background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 10px 10px 15px;'
     + 'box-shadow:0 10px 34px rgba(0,0,0,.36);font-size:13.5px;max-width:calc(100% - 32px)}'
+    + '.toast.up{bottom:auto;top:calc(16px + env(safe-area-inset-top,0px))}'
     + '.toast .tmsg{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
     + '.tbtn{appearance:none;border:0;background:transparent;color:var(--bg);font-family:inherit;font-size:12px;'
     + 'font-weight:800;letter-spacing:.09em;text-transform:uppercase;cursor:pointer;padding:5px 7px;border-radius:7px;'
@@ -390,6 +391,7 @@ function APP(){
   var photoView = '';
   var chooser = false;
   var gameMenu = '';
+  var gameEdit = false;
   var betView = '';
   var betEdit = false;
   var undoSnap = null;
@@ -1083,6 +1085,21 @@ function APP(){
     var g = null, i;
     for(i = 0; i < STATE.games.length; i++) if(STATE.games[i].id === gameMenu) g = STATE.games[i];
     if(!g) return '';
+    if(gameEdit){
+      return '<div class="scrim" data-close-game="1"><form class="sheet" id="game-edit-form" novalidate>'
+        + '<h2>Edit ' + esc(g.name) + '</h2>'
+        + '<p class="lead">Wins, ties and bets already logged stay with this game.</p>'
+        + '<div><label for="ge-name">Game</label>'
+        + '<input class="inp" id="ge-name" name="ge-name" type="text" autocomplete="off" maxlength="28"'
+        + ' value="' + esc(g.name) + '" required></div>'
+        + '<div><label for="ge-rule">Tagline (optional)</label>'
+        + '<input class="inp" id="ge-rule" name="ge-rule" type="text" autocomplete="off" maxlength="52"'
+        + ' placeholder="Something to talk trash about" value="' + esc(g.rule || '') + '"></div>'
+        + (lockErr ? '<p class="sheeterr">' + esc(lockErr) + '</p>' : '')
+        + '<div class="acts"><button type="submit" class="btn primary" data-game-save="' + g.id + '">Save changes</button>'
+        + '<button type="button" class="btn" data-game-cancel="1">Cancel</button></div>'
+        + '</form></div>';
+    }
     var t = tally();
     var played = t.a[g.id] + t.b[g.id] + (t.t[g.id] || 0);
     var sw = '<button type="button" class="sw" data-sw-ties="' + g.id + '"'
@@ -1095,6 +1112,7 @@ function APP(){
       + (g.ties ? 'A tie button sits in here, out of the way of the scoreboard.'
                 : 'Switch this on for a game that can end level. Nothing changes on the scoreboard itself.')
       + '</p></div>'
+      + '<div class="acts"><button type="button" class="btn" data-game-edit="' + g.id + '">Edit name and tagline</button></div>'
       + (g.ties ? '<div class="acts"><button type="button" class="btn primary" data-tie="' + g.id + '">Log a tie</button></div>' : '')
       + (g.custom && played === 0
           ? '<div class="acts"><button type="button" class="btn" data-kill="' + g.id + '">Remove this game</button></div>'
@@ -1944,6 +1962,37 @@ function APP(){
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
+  // Renaming keeps the game's id, so every match, tie and bet stays attached.
+  function saveGameEdit(){
+    if(readOnly || !gameMenu) return;
+    var nameEl = document.getElementById('ge-name'), ruleEl = document.getElementById('ge-rule');
+    if(!nameEl || !ruleEl) return;
+    var name = (nameEl.value || '').trim().slice(0, 28);
+    var rule = (ruleEl.value || '').trim().slice(0, 52);
+    if(!name){ lockErr = 'A game needs a name.'; render(); focusEnd('ge-name'); return; }
+    var g = null, clash = false, i;
+    for(i = 0; i < STATE.games.length; i++){
+      if(STATE.games[i].id === gameMenu) g = STATE.games[i];
+      else if(STATE.games[i].name.toLowerCase() === name.toLowerCase()) clash = true;
+    }
+    if(!g){ gameEdit = false; gameMenu = ''; render(); return; }
+    if(clash){ lockErr = 'There is already a game called ' + name + '.'; render(); focusEnd('ge-name'); return; }
+    // Back to the board once saved: the card shows the change, and the undo toast
+    // would otherwise sit on top of the sheet's buttons.
+    lockErr = ''; gameEdit = false; gameMenu = '';
+    if(name === g.name && rule === (g.rule || '')){ render(); return; }
+    snapshot('Edited ' + g.name);
+    g.name = name;
+    if(rule) g.rule = rule; else delete g.rule;
+    render(); save();
+  }
+
+  function focusEnd(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    try{ el.focus(); var n = el.value.length; el.setSelectionRange(n, n); }catch(err){}
+  }
+
   // Anything destructive stashes the whole board first, so one tap puts it back.
   function snapshot(label){
     undoSnap = JSON.stringify(STATE);
@@ -1967,7 +2016,9 @@ function APP(){
 
   function toast(){
     if(!undoSnap) return '';
-    return '<div class="toast"><span class="tmsg">' + esc(undoLabel) + '</span>'
+    // With a sheet up, the toast moves to the top so it never covers the sheet's buttons.
+    var up = (gameMenu || betView || chooser || photoView || draft) ? ' up' : '';
+    return '<div class="toast' + up + '"><span class="tmsg">' + esc(undoLabel) + '</span>'
       + '<button type="button" class="tbtn" data-undo-action="1">Undo</button>'
       + '<button type="button" class="tx" data-dismiss-undo="1" aria-label="Dismiss">&times;</button></div>';
   }
@@ -1994,6 +2045,11 @@ function APP(){
   });
 
   root.addEventListener('submit', function(ev){
+    if(ev.target.closest('#game-edit-form')){
+      ev.preventDefault();
+      saveGameEdit();
+      return;
+    }
     if(ev.target.closest('#win-form')){
       ev.preventDefault();
       if(readOnly || !draft) return;
@@ -2144,6 +2200,13 @@ function APP(){
       return;
     }
     if(gameMenu){
+      if(gameEdit){
+        if(ev.target.closest('[data-game-save]')){ ev.preventDefault(); saveGameEdit(); return; }
+        if(ev.target.closest('[data-game-cancel]')){ gameEdit = false; lockErr = ''; render(); return; }
+        if(onScrim){ gameEdit = false; lockErr = ''; gameMenu = ''; render(); }
+        return;
+      }
+      if(ev.target.closest('[data-game-edit]') && !readOnly){ gameEdit = true; lockErr = ''; render(); focusEnd('ge-rule'); return; }
       var swt = ev.target.closest('[data-sw-ties]');
       if(swt){
         var gid2 = swt.getAttribute('data-sw-ties');
@@ -2197,7 +2260,7 @@ function APP(){
     var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-menu],[data-betgroup],[data-fmt],[data-pass-forget],[data-sort],[data-cal],[data-day]');
     if(!t) return;
     if(t.hasAttribute('data-open-up')){ chooser = true; render(); return; }
-    if(t.hasAttribute('data-menu')){ gameMenu = t.getAttribute('data-menu'); render(); return; }
+    if(t.hasAttribute('data-menu')){ gameMenu = t.getAttribute('data-menu'); gameEdit = false; lockErr = ''; render(); return; }
     if(t.hasAttribute('data-bet-open')){ betView = t.getAttribute('data-bet-open'); betEdit = false; lockErr = ''; render(); return; }
     if(t.hasAttribute('data-ledger-toggle')){ ledgerOpen = !ledgerOpen; render(); return; }
     if(t.hasAttribute('data-cal-toggle')){ calOpen = !calOpen; render(); return; }
