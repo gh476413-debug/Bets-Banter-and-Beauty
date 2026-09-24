@@ -73,7 +73,7 @@ function APP(){
     + '.linkish{appearance:none;border:0;background:transparent;padding:0;font:inherit;color:var(--ink);font-weight:600;text-decoration:underline;cursor:pointer}'
     + '.synctxt{margin:0;font-size:13px;color:var(--muted);line-height:1.5}'
     + '.synctxt b{color:var(--ink);font-weight:600}'
-    + '#join-form,#gh-form{display:flex;flex-direction:column;gap:6px;margin-top:4px}'
+    + '#join-form,#gh-form,#attach-form{display:flex;flex-direction:column;gap:6px;margin-top:4px}'
     + '.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block}'
     + '.status[data-s="saving"] .dot{background:var(--gold)}'
     + '.status[data-s="saved"] .dot{background:var(--b)}'
@@ -391,6 +391,7 @@ function APP(){
   var chooser = false;
   var gameMenu = '';
   var betView = '';
+  var betEdit = false;
   var undoSnap = null;
   var undoLabel = '';
   var undoTimer = null;
@@ -718,6 +719,23 @@ function APP(){
     return STATE.games.slice().sort(function(x, y){ return String(x.name).localeCompare(String(y.name)); });
   }
 
+  // Bets logged before the game was played: no match, not yet settled.
+  function pendingBets(){
+    return STATE.bets.filter(function(b){ return !b.matchId && !b.done; });
+  }
+
+  function attachBet(betId, matchId){
+    var m = null, i;
+    for(i = 0; i < STATE.log.length; i++) if(STATE.log[i].id === matchId) m = STATE.log[i];
+    STATE.bets.forEach(function(b){
+      if(b.id !== betId) return;
+      b.matchId = matchId;
+      // The result decides who pays; a tie leaves it open for the two of them to sort out.
+      if(m && m.winner !== 't') b.owedBy = m.winner === 'a' ? 'b' : 'a';
+    });
+    if(m) delete m.nobet;
+  }
+
   function betFor(matchId){
     for(var i = 0; i < STATE.bets.length; i++) if(STATE.bets[i].matchId === matchId) return STATE.bets[i];
     return null;
@@ -803,6 +821,7 @@ function APP(){
 
     function row(b){
       var src = b.matchId ? matchLabel(b.matchId) : '';
+      var waitTag = (!b.matchId && !b.done) ? '<span class="sep">&middot;</span><span>waiting for a game</span>' : '';
       var by = (b.by === 'a' || b.by === 'b')
         ? '<span class="sep">&middot;</span><span>called by ' + esc(STATE.players[b.by]) + '</span>'
         : '<span class="needby">Bet initiator?</span>';
@@ -815,7 +834,7 @@ function APP(){
             ? '<span class="owes ' + b.owedBy + '">' + esc(STATE.players[b.owedBy]) + ' owes</span>'
             : '<span class="needby">Who owes?</span>')
         + by
-        + (src ? '<span class="sep">&middot;</span><span>' + esc(src) + '</span>' : '')
+        + (src ? '<span class="sep">&middot;</span><span>' + esc(src) + '</span>' : waitTag)
         + (b.done ? '<span class="sep">&middot;</span><span>paid ' + when(b.doneAt || b.t) + '</span>' : '')
         + '</div></button>'
         + (readOnly ? '' : '<button class="betkill" data-bet-del="' + b.id + '" aria-label="Delete this bet">&times;</button>')
@@ -979,7 +998,7 @@ function APP(){
   function openNew(game, winner){
     var now = new Date().toISOString();
     draft = { isNew: true, id: uid(), game: game, winner: winner, t: now,
-              useDate: true, useTime: false, loc: '', bet: '', by: '', useBet: true, photo: '', err: '' };
+              useDate: true, useTime: false, loc: '', bet: '', by: '', pick: '', useBet: true, photo: '', err: '' };
     render();
   }
 
@@ -987,7 +1006,7 @@ function APP(){
     var b = betFor(e.id);
     draft = { isNew: false, id: e.id, game: e.game, winner: e.winner, t: e.t,
               useDate: !e.nodate, useTime: !e.notime, loc: e.loc || '',
-              bet: (b && b.text) || '', by: (b && b.by) || '', useBet: !e.nobet, photo: e.photo || '', err: '' };
+              bet: (b && b.text) || '', by: (b && b.by) || '', pick: '', useBet: !e.nobet, photo: e.photo || '', err: '' };
     render();
   }
 
@@ -1001,11 +1020,13 @@ function APP(){
     if(b) draft.bet = (b.value || '').trim().slice(0, 90);
     var by = document.getElementById('m-by');
     if(by) draft.by = (by.value === 'a' || by.value === 'b') ? by.value : '';
+    var pk = document.getElementById('m-pick');
+    if(pk) draft.pick = pk.value || '';
   }
 
   function commitSheet(){
     readSheet();
-    if(draft.useBet && draft.bet && !draft.by){
+    if(draft.useBet && !draft.pick && draft.bet && !draft.by){
       draft.err = 'Pick who called the bet, or clear the bet line.';
       render();
       var errEl = document.getElementById('m-err');
@@ -1025,6 +1046,19 @@ function APP(){
     if(draft.photo) entry.photo = draft.photo; else delete entry.photo;
 
     var existing = betFor(draft.id);
+    if(draft.useBet && draft.pick){
+      // A bet that was waiting for a game finally has one.
+      delete entry.nobet;
+      if(existing && existing.id !== draft.pick && !existing.done){
+        STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+      }
+      attachBet(draft.pick, draft.id);
+      STATE.log.sort(function(p, q){ return new Date(p.t) - new Date(q.t); });
+      popKey = draft.isNew ? (draft.game + ':' + draft.winner) : null;
+      draft = null;
+      render(); save();
+      return;
+    }
     if(!draft.useBet){
       entry.nobet = true;
       if(existing && !existing.done) STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
@@ -1120,7 +1154,54 @@ function APP(){
     } else if(b.matchId){
       linked = '<p class="synctxt">This bet was attached to a match that has since been deleted, so there is nothing left to open.</p>';
     } else {
-      linked = '<p class="synctxt">Added straight to the Bets tab, so it is not tied to any one game.</p>';
+      // Logged ahead of the game: offer the matches that have nothing riding on them.
+      var free = STATE.log.filter(function(e){ return !betFor(e.id); })
+                          .slice().sort(function(x, y){ return new Date(y.t) - new Date(x.t); })
+                          .slice(0, 12);
+      linked = '<p class="synctxt">Waiting for a game. Attach it to a match here, or pick it from the bet line '
+        + 'the next time you log a win.</p>'
+        + (free.length
+            ? '<form id="attach-form"><label for="bd-match">Attach to a match</label>'
+              + '<select class="inp" id="bd-match" name="bd-match">'
+              + free.map(function(e){
+                  return '<option value="' + e.id + '">'
+                    + (e.winner === 't' ? 'Tied at ' + esc(gameName(e.game))
+                                        : esc(STATE.players[e.winner]) + ' took ' + esc(gameName(e.game)))
+                    + (e.nodate ? '' : ' \u00b7 ' + when(e.t)) + '</option>';
+                }).join('')
+              + '</select>'
+              + '<div class="acts"><button type="submit" class="btn" data-attach="' + b.id + '">Attach</button></div></form>'
+            : '<p class="fnote" style="margin:0">Every match already has a bet on it, so there is nothing to attach this to yet.</p>');
+    }
+
+    if(betEdit){
+      var opt = function(cur, k, label){
+        return '<option value="' + k + '"' + (cur === k ? ' selected' : '') + '>' + label + '</option>';
+      };
+      return '<div class="scrim" data-close-bet="1"><form class="sheet" id="bet-edit-form" novalidate>'
+        + '<h2>Edit the bet</h2>'
+        + '<p class="lead">Added ' + when(b.t) + (b.matchId && matchLabel(b.matchId) ? ' \u00b7 ' + esc(matchLabel(b.matchId)) : '') + '</p>'
+        + '<div><label for="be-text">' + IC_DICE + 'The bet</label>'
+        + '<input class="inp" id="be-text" name="be-text" type="text" autocomplete="off" maxlength="90"'
+        + ' value="' + esc(b.text) + '" required></div>'
+        + '<div class="row"><div><label for="be-by">Bet initiator</label>'
+        + '<select class="inp" id="be-by" name="be-by">'
+        + opt(b.by, '', 'Who called it?') + opt(b.by, 'a', esc(STATE.players.a)) + opt(b.by, 'b', esc(STATE.players.b))
+        + '</select></div>'
+        + '<div><label for="be-who">Who owes</label>'
+        + '<select class="inp" id="be-who" name="be-who">'
+        + opt(b.owedBy, '', 'Nobody yet') + opt(b.owedBy, 'a', esc(STATE.players.a)) + opt(b.owedBy, 'b', esc(STATE.players.b))
+        + '</select></div></div>'
+        + (b.matchId
+            ? '<div><label>Linked match</label>'
+              + '<p class="fnote" style="margin:0 0 7px">'
+              + (matchLabel(b.matchId) ? esc(matchLabel(b.matchId)) : 'That match has since been deleted.') + '</p>'
+              + '<button type="button" class="btn" data-bet-unlink="' + b.id + '">Unlink from the match</button></div>'
+            : '')
+        + (lockErr ? '<p class="sheeterr">' + esc(lockErr) + '</p>' : '')
+        + '<div class="acts"><button type="button" class="btn primary" data-bet-save="' + b.id + '">Save changes</button>'
+        + '<button type="button" class="btn" data-bet-cancel="1">Cancel</button></div>'
+        + '</form></div>';
     }
 
     return '<div class="scrim" data-close-bet="1"><div class="sheet">'
@@ -1145,6 +1226,7 @@ function APP(){
       + '<div class="acts">'
       + (readOnly ? '' : '<button type="button" class="btn primary" data-bet-toggle="' + b.id + '">'
           + (b.done ? 'Mark unpaid' : 'Mark paid') + '</button>')
+      + (readOnly ? '' : '<button type="button" class="btn" data-bet-edit="1">Edit</button>')
       + '<button type="button" class="btn" data-close-bet="1">Close</button></div>'
       + '</div></div>';
   }
@@ -1160,6 +1242,9 @@ function APP(){
     }
     if(!draft) return '';
     var tie = draft.winner === 't';
+    var waiting = pendingBets();
+    var picked = null;
+    waiting.forEach(function(b){ if(b.id === draft.pick) picked = b; });
     var who = esc(sideName(draft.winner));
     var loser = tie ? '' : esc(STATE.players[draft.winner === 'a' ? 'b' : 'a']);
     var sw = function(key, on){
@@ -1186,16 +1271,31 @@ function APP(){
 
       + '<div><div class="trow"><span class="tl">' + IC_DICE + 'Bet on this one</span>' + sw('bet', draft.useBet) + '</div>'
       + '<div class="field' + (draft.useBet ? '' : ' off') + '" style="margin-top:6px">'
-      + '<input class="inp" id="m-bet" name="m-bet" type="text" autocomplete="off" maxlength="90"'
-      + ' placeholder="Loser buys tacos" value="' + esc(draft.bet) + '">'
-      + '<div style="margin-top:8px"><label for="m-by">Bet initiator</label>'
+      + (waiting.length
+          ? '<div style="margin-bottom:9px"><label for="m-pick">Use a bet you already logged</label>'
+            + '<select class="inp" id="m-pick" name="m-pick">'
+            + '<option value=""' + (draft.pick ? '' : ' selected') + '>Write a new one</option>'
+            + waiting.map(function(b){
+                return '<option value="' + b.id + '"' + (draft.pick === b.id ? ' selected' : '') + '>'
+                  + esc(b.text) + '</option>';
+              }).join('')
+            + '</select></div>'
+          : '')
+      + (picked
+          ? '<p class="fnote" style="margin:0">Logging this match settles <b>' + esc(picked.text) + '</b>'
+            + ((picked.by === 'a' || picked.by === 'b') ? ', called by ' + esc(STATE.players[picked.by]) : '')
+            + '. ' + (tie ? 'A tie leaves who owes it open.' : esc(loser) + ' lost, so ' + esc(loser) + ' owes.') + '</p>'
+          : '<input class="inp" id="m-bet" name="m-bet" type="text" autocomplete="off" maxlength="90"'
+            + ' placeholder="Loser buys tacos" value="' + esc(draft.bet) + '">')
+      + (picked ? '' : '<div style="margin-top:8px"><label for="m-by">Bet initiator</label>'
       + '<select class="inp" id="m-by" name="m-by">'
       + '<option value=""' + (draft.by ? '' : ' selected') + '>Who called it?</option>'
       + '<option value="a"' + (draft.by === 'a' ? ' selected' : '') + '>' + esc(STATE.players.a) + '</option>'
       + '<option value="b"' + (draft.by === 'b' ? ' selected' : '') + '>' + esc(STATE.players.b) + '</option></select></div>'
       + '<p class="fnote">' + (tie
           ? 'Nobody lost, so the bet is logged with nobody owing yet. Assign it from the Bets tab whenever you settle it.'
-          : loser + ' lost, so ' + loser + ' owes.') + '</p></div>'
+          : loser + ' lost, so ' + loser + ' owes.') + '</p>')
+      + '</div>'
       + (draft.useBet ? '' : '<p class="fnote" style="margin-top:6px">Recorded as a match with nothing riding on it.</p>')
       + '</div>'
 
@@ -1883,6 +1983,7 @@ function APP(){
       if(pic) setAppIcon(pic);
       return;
     }
+    if(draft && ev.target && ev.target.id === 'm-pick'){ readSheet(); render(); return; }
     if(draft && ev.target && ev.target.closest && ev.target.closest('#win-form')) readSheet();
   });
 
@@ -1912,6 +2013,20 @@ function APP(){
         lockErr = (e && e.message && /passcode|decrypt/i.test(e.message)) ? e.message : 'That passcode did not open this board.';
         status = 'idle'; render();
       });
+      return;
+    }
+    var af = ev.target.closest('#attach-form');
+    if(af){
+      ev.preventDefault();
+      if(readOnly) return;
+      var btn = af.querySelector('[data-attach]');
+      var sel = document.getElementById('bd-match');
+      if(!btn || !sel || !sel.value) return;
+      snapshot('Attached a bet to ' + gameName((function(){
+        var g = ''; STATE.log.forEach(function(e){ if(e.id === sel.value) g = e.game; }); return g;
+      })()));
+      attachBet(btn.getAttribute('data-attach'), sel.value);
+      render(); save();
       return;
     }
     var gf = ev.target.closest('#gh-form');
@@ -1967,6 +2082,36 @@ function APP(){
     if(ev.target.closest('[data-dismiss-undo]')){ clearUndo(); render(); return; }
     var onScrim = ev.target.classList && ev.target.classList.contains('scrim');
     if(betView){
+      if(betEdit){
+        var sv = ev.target.closest('[data-bet-save]');
+        if(sv && !readOnly){
+          var txtE = document.getElementById('be-text');
+          var newText = (txtE.value || '').trim().slice(0, 90);
+          if(!newText){ lockErr = 'A bet needs something written on it.'; render(); return; }
+          var newBy = document.getElementById('be-by').value;
+          var newWho = document.getElementById('be-who').value;
+          snapshot('Edited a bet');
+          STATE.bets.forEach(function(x){
+            if(x.id !== sv.getAttribute('data-bet-save')) return;
+            x.text = newText;
+            if(newBy === 'a' || newBy === 'b') x.by = newBy; else delete x.by;
+            if(newWho === 'a' || newWho === 'b') x.owedBy = newWho; else x.owedBy = '';
+          });
+          lockErr = ''; betEdit = false;
+          render(); save(); return;
+        }
+        var un = ev.target.closest('[data-bet-unlink]');
+        if(un && !readOnly){
+          var uid2 = un.getAttribute('data-bet-unlink');
+          snapshot('Unlinked a bet from its match');
+          STATE.bets.forEach(function(x){ if(x.id === uid2) delete x.matchId; });
+          render(); save(); return;
+        }
+        if(ev.target.closest('[data-bet-cancel]')){ betEdit = false; lockErr = ''; render(); return; }
+        if(onScrim){ betEdit = false; lockErr = ''; betView = ''; render(); }
+        return;
+      }
+      if(ev.target.closest('[data-bet-edit]')){ betEdit = true; lockErr = ''; render(); return; }
       var ph = ev.target.closest('[data-photo]');
       if(ph){
         var pid2 = ph.getAttribute('data-photo');
@@ -1995,7 +2140,7 @@ function APP(){
         });
         render(); save(); return;
       }
-      if(onScrim || ev.target.closest('button[data-close-bet]')){ betView = ''; render(); }
+      if(onScrim || ev.target.closest('button[data-close-bet]')){ betView = ''; betEdit = false; render(); }
       return;
     }
     if(gameMenu){
@@ -2053,7 +2198,7 @@ function APP(){
     if(!t) return;
     if(t.hasAttribute('data-open-up')){ chooser = true; render(); return; }
     if(t.hasAttribute('data-menu')){ gameMenu = t.getAttribute('data-menu'); render(); return; }
-    if(t.hasAttribute('data-bet-open')){ betView = t.getAttribute('data-bet-open'); render(); return; }
+    if(t.hasAttribute('data-bet-open')){ betView = t.getAttribute('data-bet-open'); betEdit = false; lockErr = ''; render(); return; }
     if(t.hasAttribute('data-ledger-toggle')){ ledgerOpen = !ledgerOpen; render(); return; }
     if(t.hasAttribute('data-cal-toggle')){ calOpen = !calOpen; render(); return; }
     if(t.hasAttribute('data-sync-toggle')){ syncOpen = !syncOpen; render(); return; }
@@ -2086,7 +2231,7 @@ function APP(){
     }
     if(t.hasAttribute('data-tab')){
       var v = t.getAttribute('data-tab');
-      if(v !== view){ view = v; draft = null; chooser = false; betView = ''; gameMenu = ''; adding = false; render(); window.scrollTo(0, 0); }
+      if(v !== view){ view = v; draft = null; chooser = false; betView = ''; betEdit = false; gameMenu = ''; adding = false; render(); window.scrollTo(0, 0); }
       return;
     }
     if(t.hasAttribute('data-copy-link')){
