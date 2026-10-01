@@ -261,6 +261,14 @@ function APP(){
     + '.betmark{font-weight:700;font-size:10px;letter-spacing:.09em;text-transform:uppercase}'
     + '.betmark.open{color:var(--open)}'
     + '.betmark.done{color:var(--settled)}'
+    + '.sermark{display:inline-block;border:1px dashed currentColor;border-radius:99px;padding:1.5px 8px;line-height:1.4;'
+    + 'font-weight:700;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}'
+    + '.serline{margin:9px 0 0;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--open);text-align:center}'
+    + '.pick.n{font-size:14px;padding:11px 10px}'
+    + '.pick[aria-pressed="true"].n{border-color:var(--ink);background:var(--surface);color:var(--ink)}'
+    + '.serlist{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:13px}'
+    + '.serlist .w{font-weight:600}.serlist .w.a{color:var(--a-ink)}.serlist .w.b{color:var(--b-ink)}.serlist .w.t{color:var(--muted)}'
+    + '.serlist .d{color:var(--muted)}'
     + '.nobetmark{font-weight:600;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);border-width:1px;opacity:.9}'
     + '.rows .w{font-weight:600}.rows .w.a{color:var(--a-ink)}.rows .w.b{color:var(--b-ink)}.rows .w.t{color:var(--muted)}'
     + '.rows .g{color:var(--muted)}'
@@ -373,12 +381,12 @@ function APP(){
   function restoreLocal(){
     try{
       var saved = window.localStorage.getItem(LS_KEY);
-      if(saved){ STATE = JSON.parse(saved); if(!STATE.bets) STATE.bets = []; }
+      if(saved){ STATE = JSON.parse(saved); if(!STATE.bets) STATE.bets = []; if(!STATE.series) STATE.series = []; }
     }catch(err){ /* private window, blocked storage: keep the baked-in state */ }
   }
 
   if(localMode) restoreLocal();
-  if(!STATE.bets) STATE.bets = [];
+  if(!STATE.bets) STATE.bets = []; if(!STATE.series) STATE.series = [];
   function mirrorLocal(){
     try{ window.localStorage.setItem(LS_KEY, JSON.stringify(STATE)); }catch(err){}
   }
@@ -555,7 +563,14 @@ function APP(){
       + bar
       + '<div class="sides">' + side('a', ca, cb) + side('b', cb, ca) + '</div>'
       + (ct ? '<p class="tieline">' + ct + ' tie' + (ct === 1 ? '' : 's') + '</p>' : '')
+      + seriesLine(g.id)
       + '</article>';
+  }
+
+  function seriesLine(game){
+    var os = openSeriesFor(game);
+    if(!os) return '';
+    return '<p class="serline">Best of ' + os.of + ' in progress &middot; ' + leadLine(seriesScore(os)) + '</p>';
   }
 
   function addPanel(){
@@ -584,6 +599,17 @@ function APP(){
   // "no bet" mark, or a bet with nobody named as the one who called it.
   function needsInitiator(entry){
     var b = betFor(entry.id);
+    if(entry.series && !b){
+      // A series is flagged once, on its latest game, not on every game in it.
+      var s = seriesById(entry.series);
+      if(!s) return false;
+      var g = seriesGames(s.id);
+      var sb = seriesBet(s.id);
+      var onId = (sb && sb.onGame && g.some(function(x){ return x.id === sb.onGame; })) ? sb.onGame : (g.length ? g[g.length - 1].id : '');
+      if(entry.id !== onId) return false;
+      if(!sb) return !s.nobet;
+      return sb.by !== 'a' && sb.by !== 'b';
+    }
     if(!b) return !entry.nobet;
     return b.by !== 'a' && b.by !== 'b';
   }
@@ -616,7 +642,10 @@ function APP(){
     } else {
       // Sorted off the timestamps themselves, so a time added after the fact
       // drops the match straight into its right place in the run of play.
-      log.sort(function(x, y){ return new Date(y.t) - new Date(x.t); });
+      // Games logged in the same minute keep the order they were entered, newest on top.
+      var at = {};
+      STATE.log.forEach(function(e, n){ at[e.id] = n; });
+      log.sort(function(x, y){ return (new Date(y.t) - new Date(x.t)) || (at[y.id] - at[x.id]); });
     }
     var shown = showAll ? log : log.slice(0, 12);
     var rows = shown.map(function(e){
@@ -624,11 +653,7 @@ function APP(){
       if(!e.nodate) bits.push('<span class="when">' + when(e.t) + '</span>');
       if(!e.notime) bits.push('<span class="when">' + clock(e.t) + '</span>');
       if(e.loc) bits.push('<span class="place">' + esc(e.loc) + '</span>');
-      var tags = [];
-      var b = betFor(e.id);
-      if(b) tags.push('<span class="betmark ' + (b.done ? 'done' : 'open') + '">' + (b.done ? 'bet settled' : 'bet open') + '</span>');
-      else if(e.nobet) tags.push('<span class="nobetmark">no bet</span>');
-      if(needsInitiator(e)) tags.push('<span class="needby">Bet initiator?</span>');
+      var tags = rowTags(e);
       if(!bits.length && !tags.length && !readOnly) bits.push('<span class="place">no details noted</span>');
       var meta = bits.join('<span class="sep">&middot;</span>') + tags.join('');
       return '<li><span class="chip ' + e.winner + '"></span>'
@@ -713,6 +738,16 @@ function APP(){
     + '<path d="M3.6 16.4l4.6-4.1 3.6 3.1 3.2-2.7 5.4 4.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>'
     + '</svg>';
 
+  var IC_STACK = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<rect x="3.4" y="7.4" width="13.2" height="13.2" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/>'
+    + '<path d="M7.4 7.4V5.8a2.4 2.4 0 0 1 2.4-2.4h8.4a2.4 2.4 0 0 1 2.4 2.4v8.4a2.4 2.4 0 0 1-2.4 2.4h-1.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '</svg>';
+
+  var IC_DOWN = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<path d="M12 3.6v11.2M7.4 10.4l4.6 4.6 4.6-4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<path d="M4.4 15.6v2.8a2 2 0 0 0 2 2h11.2a2 2 0 0 0 2-2v-2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '</svg>';
+
   var IC_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true">'
     + '<path d="M5 12.8L10 17.5L19.2 7.2" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>'
     + '</svg>';
@@ -723,7 +758,7 @@ function APP(){
 
   // Bets logged before the game was played: no match, not yet settled.
   function pendingBets(){
-    return STATE.bets.filter(function(b){ return !b.matchId && !b.done; });
+    return STATE.bets.filter(function(b){ return !b.matchId && !b.seriesId && !b.done; });
   }
 
   function attachBet(betId, matchId){
@@ -743,6 +778,119 @@ function APP(){
     return null;
   }
 
+  // ---- series -------------------------------------------------------------
+  // A series groups games of one kind under a single bet. Every game in it still
+  // counts on the scoreboard; the series only decides who owes.
+  function seriesById(id){
+    if(!id) return null;
+    for(var i = 0; i < STATE.series.length; i++) if(STATE.series[i].id === id) return STATE.series[i];
+    return null;
+  }
+
+  function seriesGames(id){
+    return STATE.log.filter(function(e){ return e.series === id; })
+                    .sort(function(x, y){ return new Date(x.t) - new Date(y.t); });
+  }
+
+  function seriesNeed(s){ return Math.floor(s.of / 2) + 1; }
+
+  // Played in order, so whoever gets to the winning number first has it,
+  // whatever gets added or edited around it afterwards.
+  function seriesScore(s, extra){
+    var list = seriesGames(s.id);
+    if(extra) list = list.concat([extra]).sort(function(x, y){ return new Date(x.t) - new Date(y.t); });
+    var sc = {a:0, b:0, t:0, n:0, winner:''}, need = seriesNeed(s);
+    list.forEach(function(e){
+      if(e.winner !== 'a' && e.winner !== 'b' && e.winner !== 't') return;
+      sc[e.winner]++; sc.n++;
+      if(!sc.winner && e.winner !== 't' && sc[e.winner] >= need) sc.winner = e.winner;
+    });
+    return sc;
+  }
+
+  function seriesOpen(s){ return !!s && !s.closed && !seriesScore(s).winner; }
+
+  function seriesFirst(s){ var g = seriesGames(s.id); return g.length ? g[0].t : s.t; }
+
+  function seriesLast(s){
+    var g = seriesGames(s.id);
+    var d = new Date(g.length ? g[g.length - 1].t : s.t).getTime();
+    return isNaN(d) ? 0 : d;
+  }
+
+  function openSeriesFor(game){
+    var best = null;
+    STATE.series.forEach(function(s){
+      if(s.game === game && seriesOpen(s) && (!best || seriesLast(s) > seriesLast(best))) best = s;
+    });
+    return best;
+  }
+
+  function seriesBet(id){
+    for(var i = 0; i < STATE.bets.length; i++) if(STATE.bets[i].seriesId === id) return STATE.bets[i];
+    return null;
+  }
+
+  function seriesLabel(s){ return gameName(s.game) + ', best of ' + s.of + ', ' + when(seriesFirst(s)); }
+
+  function scoreLine(sc){
+    return esc(STATE.players.a) + ' ' + sc.a + ', ' + esc(STATE.players.b) + ' ' + sc.b
+      + (sc.t ? ', ' + sc.t + ' tied' : '');
+  }
+
+  function leadLine(sc){
+    if(sc.a === sc.b) return 'level at ' + sc.a + '&ndash;' + sc.b;
+    var k = sc.a > sc.b ? 'a' : 'b';
+    return esc(STATE.players[k]) + ' leads ' + Math.max(sc.a, sc.b) + '&ndash;' + Math.min(sc.a, sc.b);
+  }
+
+  // The result decides who pays. A series still being played owes nobody yet;
+  // one ended early without a winner is left for the two of them to settle.
+  function settleSeries(id){
+    var s = seriesById(id); if(!s) return;
+    var b = seriesBet(id); if(!b) return;
+    var sc = seriesScore(s);
+    if(sc.winner) b.owedBy = sc.winner === 'a' ? 'b' : 'a';
+    else if(!s.closed) b.owedBy = '';
+  }
+
+  // Where a bet came from, in words: a match, a series, or nothing yet.
+  function betSource(b){
+    if(b.seriesId){ var s = seriesById(b.seriesId); return s ? seriesLabel(s) : ''; }
+    return b.matchId ? matchLabel(b.matchId) : '';
+  }
+
+  function betTag(b, what){
+    return '<span class="betmark ' + (b.done ? 'done' : 'open') + '">' + what + ' ' + (b.done ? 'settled' : 'open') + '</span>';
+  }
+
+  // The little pills under a match in the ledger and the calendar.
+  function rowTags(e){
+    var tags = [];
+    var b = betFor(e.id);
+    var s = e.series ? seriesById(e.series) : null;
+    if(b) tags.push(betTag(b, 'bet'));
+    if(s){
+      var g = seriesGames(s.id), k = 0, i;
+      for(i = 0; i < g.length; i++) if(g[i].id === e.id) k = i + 1;
+      var last = k === g.length, tail = '';
+      if(last){
+        var sc = seriesScore(s);
+        tail = sc.winner ? ' &middot; series to ' + esc(STATE.players[sc.winner])
+             : (s.closed ? ' &middot; ended early' : ' &middot; in progress');
+      }
+      tags.push('<span class="sermark">Best of ' + s.of + ' &middot; game ' + k + tail + '</span>');
+      var sb = seriesBet(s.id);
+      var onId = (sb && sb.onGame && g.some(function(x){ return x.id === sb.onGame; })) ? sb.onGame : (g.length ? g[g.length - 1].id : '');
+      if(sb && e.id === onId) tags.push(betTag(sb, 'series bet'));
+      else if(!sb && last && s.nobet) tags.push('<span class="nobetmark">no bet</span>');
+    } else if(!b && e.nobet){
+      tags.push('<span class="nobetmark">no bet</span>');
+    }
+    if(needsInitiator(e)) tags.push('<span class="needby">Bet initiator?</span>');
+    return tags;
+  }
+
   function matchLabel(id){
     for(var i = 0; i < STATE.log.length; i++){
       if(STATE.log[i].id === id){
@@ -756,6 +904,10 @@ function APP(){
   // A bet belongs to the night its game was played, not to the minute somebody
   // got around to typing it in. Only a bet with no match falls back to that.
   function betWhen(b){
+    if(b.seriesId){
+      if(b.onGame) for(var k = 0; k < STATE.log.length; k++) if(STATE.log[k].id === b.onGame) return STATE.log[k].t;
+      var s = seriesById(b.seriesId); if(s) return seriesFirst(s);
+    }
     if(b.matchId){
       for(var i = 0; i < STATE.log.length; i++) if(STATE.log[i].id === b.matchId) return STATE.log[i].t;
     }
@@ -799,7 +951,7 @@ function APP(){
     else if(!open.length) summary = '<b>All square.</b> Every bet has been paid up.';
     else summary = '<b>' + open.length + ' outstanding</b> &middot; '
       + esc(STATE.players.a) + ' owes ' + owedA + ' &middot; ' + esc(STATE.players.b) + ' owes ' + owedB
-      + (open.length - owedA - owedB > 0 ? ' &middot; ' + (open.length - owedA - owedB) + ' from a tie' : '')
+      + (open.length - owedA - owedB > 0 ? ' &middot; ' + (open.length - owedA - owedB) + ' with nobody owing yet' : '')
       + (done.length ? ' &middot; ' + done.length + ' settled' : '');
 
     var initiated = STATE.bets.filter(function(b){ return b.by === 'a' || b.by === 'b'; });
@@ -812,7 +964,7 @@ function APP(){
         + '<span class="who ' + last.by + '">' + esc(STATE.players[last.by]) + '</span>'
         + '<p class="quote">&ldquo;' + esc(last.text) + '&rdquo;</p>'
         + '<p class="fnote" style="margin:3px 0 0">'
-        + (last.matchId && matchLabel(last.matchId) ? esc(matchLabel(last.matchId)) : 'Added straight to the Bets tab &middot; ' + when(last.t))
+        + (betSource(last) ? esc(betSource(last)) : 'Added straight to the Bets tab &middot; ' + when(last.t))
         + '</p>'
         + '<p class="tallyline">Bets started &mdash; <b class="a">' + esc(STATE.players.a) + ' ' + byA + '</b>'
         + '<span class="sep">&middot;</span><b class="b">' + esc(STATE.players.b) + ' ' + byB + '</b>'
@@ -822,8 +974,9 @@ function APP(){
     }
 
     function row(b){
-      var src = b.matchId ? matchLabel(b.matchId) : '';
-      var waitTag = (!b.matchId && !b.done) ? '<span class="sep">&middot;</span><span>waiting for a game</span>' : '';
+      var src = betSource(b);
+      var rs = b.seriesId ? seriesById(b.seriesId) : null;
+      var waitTag = (!b.matchId && !b.seriesId && !b.done) ? '<span class="sep">&middot;</span><span>waiting for a game</span>' : '';
       var by = (b.by === 'a' || b.by === 'b')
         ? '<span class="sep">&middot;</span><span>called by ' + esc(STATE.players[b.by]) + '</span>'
         : '<span class="needby">Bet initiator?</span>';
@@ -834,7 +987,7 @@ function APP(){
         + ' aria-label="Details for this bet"><div class="bt">' + esc(b.text) + '</div>'
         + '<div class="bmeta">' + (b.owedBy === 'a' || b.owedBy === 'b'
             ? '<span class="owes ' + b.owedBy + '">' + esc(STATE.players[b.owedBy]) + ' owes</span>'
-            : '<span class="needby">Who owes?</span>')
+            : (rs && seriesOpen(rs) ? '<span class="sermark">series in progress</span>' : '<span class="needby">Who owes?</span>'))
         + by
         + (src ? '<span class="sep">&middot;</span><span>' + esc(src) + '</span>' : waitTag)
         + (b.done ? '<span class="sep">&middot;</span><span>paid ' + when(b.doneAt || b.t) + '</span>' : '')
@@ -972,11 +1125,7 @@ function APP(){
                   var bits = [];
                   if(!e.notime) bits.push('<span class="when">' + clock(e.t) + '</span>');
                   if(e.loc) bits.push('<span class="place">' + esc(e.loc) + '</span>');
-                  var tags = [];
-                  var bt = betFor(e.id);
-                  if(bt) tags.push('<span class="betmark ' + (bt.done ? 'done' : 'open') + '">' + (bt.done ? 'bet settled' : 'bet open') + '</span>');
-                  else if(e.nobet) tags.push('<span class="nobetmark">no bet</span>');
-                  if(needsInitiator(e)) tags.push('<span class="needby">Bet initiator?</span>');
+                  var tags = rowTags(e);
                   return '<li><span class="chip ' + e.winner + '"></span>'
                     + '<div class="rowmain"><div class="l1">' + outcomeLine(e) + '</div>'
                     + ((bits.length || tags.length)
@@ -999,17 +1148,53 @@ function APP(){
   // ---- the win sheet ------------------------------------------------------
   function openNew(game, winner){
     var now = new Date().toISOString();
+    // The series switch always starts off; switching it on offers the one in progress.
+    var os = openSeriesFor(game);
     draft = { isNew: true, id: uid(), game: game, winner: winner, t: now,
-              useDate: true, useTime: false, loc: '', bet: '', by: '', pick: '', useBet: true, photo: '', err: '' };
+              useDate: true, useTime: false, loc: '', bet: '', by: '', pick: '', useBet: true, photo: '', err: '',
+              inSeries: false, seriesId: os ? os.id : '', origSeries: '', of: 3, closeSid: '',
+              ownBet: '', ownBy: '', ownUse: true };
     render();
   }
 
   function openEdit(e){
     var b = betFor(e.id);
+    var ms = e.series ? seriesById(e.series) : null;
+    var os = ms ? null : openSeriesFor(e.game);
     draft = { isNew: false, id: e.id, game: e.game, winner: e.winner, t: e.t,
               useDate: !e.nodate, useTime: !e.notime, loc: e.loc || '',
-              bet: (b && b.text) || '', by: (b && b.by) || '', pick: '', useBet: !e.nobet, photo: e.photo || '', err: '' };
+              bet: (b && b.text) || '', by: (b && b.by) || '', pick: '', useBet: !e.nobet, photo: e.photo || '', err: '',
+              inSeries: !!ms, seriesId: ms ? ms.id : (os ? os.id : ''), origSeries: ms ? ms.id : '', of: 3, closeSid: '',
+              ownBet: (b && b.text) || '', ownBy: (b && b.by) || '', ownUse: !e.nobet };
+    if(ms) fillSeriesBet();
     render();
+  }
+
+  // The bet fields describe whichever thing this game's bet rides on: the series
+  // when the switch is on, the game itself when it is off.
+  function fillSeriesBet(){
+    var ds = draftSeries();
+    var sb = ds ? seriesBet(ds.id) : null;
+    if(draft.inSeries && sb){
+      draft.bet = sb.text; draft.by = sb.by || ''; draft.useBet = true; draft.fromSb = true;
+    } else if(draft.inSeries){
+      // No series bet yet: keep what is typed, unless it was another series' bet.
+      if(draft.fromSb){ draft.bet = draft.ownBet; draft.by = draft.ownBy; }
+      draft.useBet = ds ? !ds.nobet : true;
+      draft.fromSb = false;
+    } else {
+      draft.bet = draft.ownBet; draft.by = draft.ownBy; draft.useBet = draft.ownUse; draft.fromSb = false;
+    }
+    draft.pick = '';
+  }
+
+  // The existing series this sheet is joining or already part of, if any.
+  function draftSeries(){
+    if(!draft || !draft.inSeries || !draft.seriesId) return null;
+    var s = seriesById(draft.seriesId);
+    if(!s) return null;
+    if(s.id !== draft.origSeries && !seriesOpen(s)) return null;
+    return s;
   }
 
   function readSheet(){
@@ -1028,6 +1213,7 @@ function APP(){
 
   function commitSheet(){
     readSheet();
+    var ser0 = draftSeries();
     if(draft.useBet && !draft.pick && draft.bet && !draft.by){
       draft.err = 'Pick who called the bet, or clear the bet line.';
       render();
@@ -1047,35 +1233,86 @@ function APP(){
     if(draft.loc) entry.loc = draft.loc; else delete entry.loc;
     if(draft.photo) entry.photo = draft.photo; else delete entry.photo;
 
-    var existing = betFor(draft.id);
-    if(draft.useBet && draft.pick){
-      // A bet that was waiting for a game finally has one.
-      delete entry.nobet;
-      if(existing && existing.id !== draft.pick && !existing.done){
-        STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+    // ---- which series, if any, this game belongs to
+    var prevSid = entry.series || '';
+    var sid = '';
+    if(draft.inSeries){
+      if(ser0) sid = ser0.id;
+      else {
+        // Starting over: the one that was in progress is set aside rather than left hanging.
+        var old = seriesById(draft.closeSid);
+        if(old && old.id !== prevSid && seriesOpen(old)) old.closed = true;
+        var ns = { id: uid(), game: draft.game, of: draft.of === 5 ? 5 : 3, t: new Date().toISOString() };
+        STATE.series.push(ns);
+        sid = ns.id;
       }
-      attachBet(draft.pick, draft.id);
-      STATE.log.sort(function(p, q){ return new Date(p.t) - new Date(q.t); });
-      popKey = draft.isNew ? (draft.game + ':' + draft.winner) : null;
-      draft = null;
-      render(); save();
-      return;
-    }
-    if(!draft.useBet){
-      entry.nobet = true;
-      if(existing && !existing.done) STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+      entry.series = sid;
     } else {
+      delete entry.series;
+    }
+
+    var existing = betFor(draft.id);
+
+    if(sid){
       delete entry.nobet;
-      if(draft.bet && existing){ existing.text = draft.bet; existing.by = draft.by; }
-      else if(draft.bet){
-        STATE.bets.push({ id: uid(), text: draft.bet, owedBy: loser, by: draft.by, done: false,
-                          t: new Date().toISOString(), matchId: draft.id });
-        clearOverride();
+      var ser = seriesById(sid), sb = seriesBet(sid);
+      if(draft.useBet && draft.pick && !sb){
+        // A bet that was waiting for a game rides on the series, placed on this game.
+        if(existing && existing.id !== draft.pick && !existing.done){
+          STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+        }
+        STATE.bets.forEach(function(x){ if(x.id === draft.pick){ delete x.matchId; x.seriesId = sid; x.onGame = entry.id; } });
+        delete ser.nobet;
+      } else if(draft.useBet && draft.bet){
+        delete ser.nobet;
+        if(sb){
+          // Reworded from whichever game; it stays on the game it was placed on.
+          sb.text = draft.bet; sb.by = draft.by;
+          if(!seriesById(sid) || !sb.onGame || !seriesGames(sid).some(function(e){ return e.id === sb.onGame; })) sb.onGame = entry.id;
+        } else if(existing){
+          // This game's own bet moves up to cover the whole series.
+          delete existing.matchId; existing.seriesId = sid; existing.onGame = entry.id;
+          existing.text = draft.bet; existing.by = draft.by;
+        } else {
+          STATE.bets.push({ id: uid(), text: draft.bet, owedBy: '', by: draft.by, done: false,
+                            t: new Date().toISOString(), seriesId: sid, onGame: entry.id });
+          clearOverride();
+        }
+      } else {
+        if(draft.useBet) delete ser.nobet; else ser.nobet = true;
+        var gone = sb || existing;
+        if(gone && !gone.done) STATE.bets = STATE.bets.filter(function(x){ return x.id !== gone.id; });
       }
-      else if(existing && !existing.done) STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+    } else {
+      if(prevSid){
+        // Taken out of a series: the series and its bet stay put, just not on this game.
+        STATE.bets.forEach(function(x){ if(x.seriesId === prevSid && x.onGame === entry.id) delete x.onGame; });
+      }
+      if(draft.useBet && draft.pick){
+        // A bet that was waiting for a game finally has one.
+        delete entry.nobet;
+        if(existing && existing.id !== draft.pick && !existing.done){
+          STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+        }
+        attachBet(draft.pick, draft.id);
+      } else if(!draft.useBet){
+        entry.nobet = true;
+        if(existing && !existing.done) STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+      } else {
+        delete entry.nobet;
+        if(draft.bet && existing){ existing.text = draft.bet; existing.by = draft.by; }
+        else if(draft.bet){
+          STATE.bets.push({ id: uid(), text: draft.bet, owedBy: loser, by: draft.by, done: false,
+                            t: new Date().toISOString(), matchId: draft.id });
+          clearOverride();
+        }
+        else if(existing && !existing.done) STATE.bets = STATE.bets.filter(function(x){ return x.id !== existing.id; });
+      }
     }
 
     STATE.log.sort(function(p, q){ return new Date(p.t) - new Date(q.t); });
+    if(sid) settleSeries(sid);
+    if(prevSid && prevSid !== sid) settleSeries(prevSid);
     popKey = draft.isNew ? (draft.game + ':' + draft.winner) : null;
     draft = null;
     render(); save();
@@ -1113,12 +1350,23 @@ function APP(){
                 : 'Switch this on for a game that can end level. Nothing changes on the scoreboard itself.')
       + '</p></div>'
       + '<div class="acts"><button type="button" class="btn" data-game-edit="' + g.id + '">Edit name and tagline</button></div>'
+      + gameSeriesBlock(g)
       + (g.ties ? '<div class="acts"><button type="button" class="btn primary" data-tie="' + g.id + '">Log a tie</button></div>' : '')
       + (g.custom && played === 0
           ? '<div class="acts"><button type="button" class="btn" data-kill="' + g.id + '">Remove this game</button></div>'
           : '')
       + '<div class="acts"><button type="button" class="btn" data-close-game="1">Close</button></div>'
       + '</div></div>';
+  }
+
+  function gameSeriesBlock(g){
+    var os = openSeriesFor(g.id);
+    if(!os) return '';
+    var sc = seriesScore(os);
+    return '<div><div class="trow"><span class="tl">' + IC_STACK + 'Series in progress</span></div>'
+      + '<p class="fnote" style="margin-top:6px">Best of ' + os.of + ' that started ' + when(seriesFirst(os))
+      + ', ' + leadLine(sc) + '. Ending it here leaves the series without a winner, and its bet with nobody owing until you pick.</p>'
+      + '<div class="acts"><button type="button" class="btn" data-series-end="' + os.id + '">End the series here</button></div></div>';
   }
 
   function chooserSheet(){
@@ -1154,7 +1402,27 @@ function APP(){
     if(b.by !== 'a' && b.by !== 'b') tags += '<span class="needby">Bet initiator?</span>';
 
     var linked;
-    if(match){
+    var bser = b.seriesId ? seriesById(b.seriesId) : null;
+    if(bser){
+      var bsc = seriesScore(bser);
+      var stat = bsc.winner
+        ? '<span class="w ' + bsc.winner + '">' + esc(STATE.players[bsc.winner]) + '</span> took it '
+          + Math.max(bsc.a, bsc.b) + '&ndash;' + Math.min(bsc.a, bsc.b)
+        : (bser.closed ? 'Ended early, ' + leadLine(bsc) : 'In progress, ' + leadLine(bsc) + '. First to ' + seriesNeed(bser) + ' takes it.');
+      linked = '<div class="bdmatch"><div class="bdm">'
+        + '<div class="bdt">' + esc(gameName(bser.game)) + ', best of ' + bser.of + '</div>'
+        + '<div class="bdsub"><span>' + stat + '</span></div>'
+        + '<ul class="serlist">' + seriesGames(bser.id).map(function(e, n){
+            return '<li>Game ' + (n + 1) + ': '
+              + (e.winner === 't' ? '<span class="w t">tied</span>'
+                                  : '<span class="w ' + e.winner + '">' + esc(STATE.players[e.winner]) + '</span> won')
+              + (e.nodate ? '' : ' <span class="d">&middot; ' + when(e.t) + '</span>')
+              + (e.id === b.onGame ? ' <span class="d">&middot; bet placed</span>' : '') + '</li>';
+          }).join('') + '</ul>'
+        + '</div></div>';
+    } else if(b.seriesId){
+      linked = '<p class="synctxt">This bet was attached to a series that has since been deleted.</p>';
+    } else if(match){
       var sub = [];
       if(!match.nodate) sub.push('<span>' + when(match.t) + '</span>');
       if(!match.notime) sub.push('<span>' + clock(match.t) + '</span>');
@@ -1173,19 +1441,23 @@ function APP(){
       linked = '<p class="synctxt">This bet was attached to a match that has since been deleted, so there is nothing left to open.</p>';
     } else {
       // Logged ahead of the game: offer the matches that have nothing riding on them.
-      var free = STATE.log.filter(function(e){ return !betFor(e.id); })
+      var freeSeries = STATE.series.filter(function(x){ return !seriesBet(x.id); });
+      var free = STATE.log.filter(function(e){ return !betFor(e.id) && !e.series; })
                           .slice().sort(function(x, y){ return new Date(y.t) - new Date(x.t); })
                           .slice(0, 12);
       linked = '<p class="synctxt">Waiting for a game. Attach it to a match here, or pick it from the bet line '
         + 'the next time you log a win.</p>'
-        + (free.length
-            ? '<form id="attach-form"><label for="bd-match">Attach to a match</label>'
+        + (free.length || freeSeries.length
+            ? '<form id="attach-form"><label for="bd-match">Attach to a match or series</label>'
               + '<select class="inp" id="bd-match" name="bd-match">'
               + free.map(function(e){
                   return '<option value="' + e.id + '">'
                     + (e.winner === 't' ? 'Tied at ' + esc(gameName(e.game))
                                         : esc(STATE.players[e.winner]) + ' took ' + esc(gameName(e.game)))
                     + (e.nodate ? '' : ' \u00b7 ' + when(e.t)) + '</option>';
+                }).join('')
+              + freeSeries.map(function(x){
+                  return '<option value="s:' + x.id + '">Series: ' + esc(seriesLabel(x)) + '</option>';
                 }).join('')
               + '</select>'
               + '<div class="acts"><button type="submit" class="btn" data-attach="' + b.id + '">Attach</button></div></form>'
@@ -1198,7 +1470,7 @@ function APP(){
       };
       return '<div class="scrim" data-close-bet="1"><form class="sheet" id="bet-edit-form" novalidate>'
         + '<h2>Edit the bet</h2>'
-        + '<p class="lead">Added ' + when(b.t) + (b.matchId && matchLabel(b.matchId) ? ' \u00b7 ' + esc(matchLabel(b.matchId)) : '') + '</p>'
+        + '<p class="lead">Added ' + when(b.t) + (betSource(b) ? ' \u00b7 ' + esc(betSource(b)) : '') + '</p>'
         + '<div><label for="be-text">' + IC_DICE + 'The bet</label>'
         + '<input class="inp" id="be-text" name="be-text" type="text" autocomplete="off" maxlength="90"'
         + ' value="' + esc(b.text) + '" required></div>'
@@ -1210,6 +1482,21 @@ function APP(){
         + '<select class="inp" id="be-who" name="be-who">'
         + opt(b.owedBy, '', 'Nobody yet') + opt(b.owedBy, 'a', esc(STATE.players.a)) + opt(b.owedBy, 'b', esc(STATE.players.b))
         + '</select></div></div>'
+        + (b.seriesId
+            ? '<div><label>Linked series</label>'
+              + '<p class="fnote" style="margin:0 0 7px">'
+              + (bser ? esc(seriesLabel(bser)) : 'That series has since been deleted.') + '</p>'
+              + (bser && seriesGames(bser.id).length
+                  ? '<label for="be-on">Placed on</label><select class="inp" id="be-on" name="be-on" style="margin-bottom:8px">'
+                    + '<option value=""' + (b.onGame ? '' : ' selected') + '>Not recorded</option>'
+                    + seriesGames(bser.id).map(function(e, n){
+                        return '<option value="' + e.id + '"' + (b.onGame === e.id ? ' selected' : '') + '>Game ' + (n + 1) + ': '
+                          + (e.winner === 't' ? 'tied' : esc(STATE.players[e.winner]) + ' won') + (e.nodate ? '' : ' \u00b7 ' + when(e.t)) + '</option>';
+                      }).join('')
+                    + '</select>'
+                  : '')
+              + '<button type="button" class="btn" data-bet-unlink="' + b.id + '">Unlink from the series</button></div>'
+            : '')
         + (b.matchId
             ? '<div><label>Linked match</label>'
               + '<p class="fnote" style="margin:0 0 7px">'
@@ -1234,13 +1521,16 @@ function APP(){
       + ' &middot; added ' + when(b.t)
       + (b.done ? ' &middot; paid ' + when(b.doneAt || b.t) : '') + '</span></div>'
       + (readOnly || (b.owedBy === 'a' || b.owedBy === 'b') ? ''
+          : (bser && seriesOpen(bser))
+          ? '<p class="fnote" style="margin:0">The series is still being played. Whoever loses it owes.</p>'
           : '<div><label>Who owes this one?</label>'
-            + '<p class="fnote" style="margin:0 0 7px">The match was a tie, so it is yours to settle.</p>'
+            + '<p class="fnote" style="margin:0 0 7px">' + (bser ? 'The series ended without a winner, so it is yours to settle.'
+                                                                 : 'The match was a tie, so it is yours to settle.') + '</p>'
             + '<div class="pickrow">'
             + '<button type="button" class="pick a" data-owes="' + b.id + ':a">' + esc(STATE.players.a) + '</button>'
             + '<button type="button" class="pick b" data-owes="' + b.id + ':b">' + esc(STATE.players.b) + '</button>'
             + '</div></div>')
-      + '<div><label>Linked match</label>' + linked + '</div>'
+      + '<div><label>' + (b.seriesId ? 'Linked series' : 'Linked match') + '</label>' + linked + '</div>'
       + '<div class="acts">'
       + (readOnly ? '' : '<button type="button" class="btn primary" data-bet-toggle="' + b.id + '">'
           + (b.done ? 'Mark unpaid' : 'Mark paid') + '</button>')
@@ -1269,6 +1559,49 @@ function APP(){
       return '<button type="button" class="sw" data-sw="' + key + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
         + ' aria-label="Include the ' + key + '"><i></i></button>';
     };
+    var ser = draftSeries();
+    var serBet = (draft.inSeries && ser) ? seriesBet(ser.id) : null;
+    var placedOn = '';
+    if(serBet){
+      var sgs = seriesGames(ser.id);
+      for(var pi = 0; pi < sgs.length; pi++) if(sgs[pi].id === serBet.onGame) placedOn = 'game ' + (pi + 1);
+      if(serBet.onGame === draft.id) placedOn = 'this game';
+    }
+    var serNote = serBet
+      ? 'The series bet' + (placedOn ? ', placed on ' + placedOn : '') + '. Changes here apply to the whole series. Whoever loses the series owes.'
+      : 'One bet for the whole series, recorded as placed on this game. Whoever loses the series owes.';
+    var betPart = '<div><div class="trow"><span class="tl">' + IC_DICE + (draft.inSeries ? 'Bet on the series' : 'Bet on this one') + '</span>' + sw('bet', draft.useBet) + '</div>'
+      + '<div class="field' + (draft.useBet ? '' : ' off') + '" style="margin-top:6px">'
+      + (waiting.length && !serBet
+          ? '<div style="margin-bottom:9px"><label for="m-pick">Use a bet you already logged</label>'
+            + '<select class="inp" id="m-pick" name="m-pick">'
+            + '<option value=""' + (draft.pick ? '' : ' selected') + '>Write a new one</option>'
+            + waiting.map(function(b){
+                return '<option value="' + b.id + '"' + (draft.pick === b.id ? ' selected' : '') + '>'
+                  + esc(b.text) + '</option>';
+              }).join('')
+            + '</select></div>'
+          : '')
+      + (picked
+          ? '<p class="fnote" style="margin:0">Logging this match settles <b>' + esc(picked.text) + '</b>'
+            + ((picked.by === 'a' || picked.by === 'b') ? ', called by ' + esc(STATE.players[picked.by]) : '')
+            + '. ' + (draft.inSeries ? 'It rides on the series: whoever loses the series owes.'
+                     : (tie ? 'A tie leaves who owes it open.' : esc(loser) + ' lost, so ' + esc(loser) + ' owes.')) + '</p>'
+          : '<input class="inp" id="m-bet" name="m-bet" type="text" autocomplete="off" maxlength="90"'
+            + ' placeholder="Loser buys tacos" value="' + esc(draft.bet) + '">')
+      + (picked ? '' : '<div style="margin-top:8px"><label for="m-by">Bet initiator</label>'
+      + '<select class="inp" id="m-by" name="m-by">'
+      + '<option value=""' + (draft.by ? '' : ' selected') + '>Who called it?</option>'
+      + '<option value="a"' + (draft.by === 'a' ? ' selected' : '') + '>' + esc(STATE.players.a) + '</option>'
+      + '<option value="b"' + (draft.by === 'b' ? ' selected' : '') + '>' + esc(STATE.players.b) + '</option></select></div>'
+      + '<p class="fnote">' + (draft.inSeries ? serNote : tie
+          ? 'Nobody lost, so the bet is logged with nobody owing yet. Assign it from the Bets tab whenever you settle it.'
+          : loser + ' lost, so ' + loser + ' owes.') + '</p>')
+      + '</div>'
+      + (draft.useBet ? '' : '<p class="fnote" style="margin-top:6px">'
+          + (draft.inSeries ? (serBet ? 'Saving with this off removes the series bet.' : 'Recorded as a series with nothing riding on it.')
+                            : 'Recorded as a match with nothing riding on it.') + '</p>')
+      + '</div>';
     return '<div class="scrim" data-close-sheet="1"><form class="sheet" id="win-form" data-stop="1" novalidate>'
       + '<h2>' + (tie
           ? '<span class="wn t">Tied</span> at ' + esc(gameName(draft.game))
@@ -1287,36 +1620,8 @@ function APP(){
       + '<input class="inp" id="m-loc" name="m-loc" type="text" list="places" autocomplete="off" maxlength="40"'
       + ' placeholder="The garage" value="' + esc(draft.loc) + '"></div>'
 
-      + '<div><div class="trow"><span class="tl">' + IC_DICE + 'Bet on this one</span>' + sw('bet', draft.useBet) + '</div>'
-      + '<div class="field' + (draft.useBet ? '' : ' off') + '" style="margin-top:6px">'
-      + (waiting.length
-          ? '<div style="margin-bottom:9px"><label for="m-pick">Use a bet you already logged</label>'
-            + '<select class="inp" id="m-pick" name="m-pick">'
-            + '<option value=""' + (draft.pick ? '' : ' selected') + '>Write a new one</option>'
-            + waiting.map(function(b){
-                return '<option value="' + b.id + '"' + (draft.pick === b.id ? ' selected' : '') + '>'
-                  + esc(b.text) + '</option>';
-              }).join('')
-            + '</select></div>'
-          : '')
-      + (picked
-          ? '<p class="fnote" style="margin:0">Logging this match settles <b>' + esc(picked.text) + '</b>'
-            + ((picked.by === 'a' || picked.by === 'b') ? ', called by ' + esc(STATE.players[picked.by]) : '')
-            + '. ' + (tie ? 'A tie leaves who owes it open.' : esc(loser) + ' lost, so ' + esc(loser) + ' owes.') + '</p>'
-          : '<input class="inp" id="m-bet" name="m-bet" type="text" autocomplete="off" maxlength="90"'
-            + ' placeholder="Loser buys tacos" value="' + esc(draft.bet) + '">')
-      + (picked ? '' : '<div style="margin-top:8px"><label for="m-by">Bet initiator</label>'
-      + '<select class="inp" id="m-by" name="m-by">'
-      + '<option value=""' + (draft.by ? '' : ' selected') + '>Who called it?</option>'
-      + '<option value="a"' + (draft.by === 'a' ? ' selected' : '') + '>' + esc(STATE.players.a) + '</option>'
-      + '<option value="b"' + (draft.by === 'b' ? ' selected' : '') + '>' + esc(STATE.players.b) + '</option></select></div>'
-      + '<p class="fnote">' + (tie
-          ? 'Nobody lost, so the bet is logged with nobody owing yet. Assign it from the Bets tab whenever you settle it.'
-          : loser + ' lost, so ' + loser + ' owes.') + '</p>')
-      + '</div>'
-      + (draft.useBet ? '' : '<p class="fnote" style="margin-top:6px">Recorded as a match with nothing riding on it.</p>')
-      + '</div>'
-
+      + seriesPart(ser, tie)
+      + betPart
       + '<div><label>Photo</label><div class="photobox">'
       + (draft.photo ? '<img src="' + esc(draft.photo) + '" alt="Photo of this match">' : '')
       + '<div class="photoadd">'
@@ -1334,6 +1639,48 @@ function APP(){
       + '<button type="button" class="btn" data-close-sheet="1">Cancel</button></div>'
       + datalist()
       + '</form></div>';
+  }
+
+  // The series switch on the win sheet, and what it will do.
+  function seriesPart(ser, tie){
+    var sw = '<button type="button" class="sw" data-sw="series" aria-pressed="' + (draft.inSeries ? 'true' : 'false') + '"'
+      + ' aria-label="Part of a series"><i></i></button>';
+    var body;
+    if(!draft.inSeries){
+      body = '<p class="fnote" style="margin-top:6px">Switch this on to group games into a best of 3 or 5 with one bet on the whole series. '
+        + 'Every game still counts on the scoreboard.</p>';
+    } else if(ser){
+      var games = seriesGames(ser.id), member = ser.id === draft.origSeries, k = games.length + 1, i;
+      if(member) for(i = 0; i < games.length; i++) if(games[i].id === draft.id) k = i + 1;
+      var start = when(seriesFirst(ser));
+      if(member){
+        var sc = seriesScore(ser);
+        body = '<p class="fnote" style="margin-top:6px">Game ' + k + ' of a best of ' + ser.of + ' that started ' + start + '. '
+          + 'Series score: ' + scoreLine(sc) + '.'
+          + (sc.winner ? ' ' + esc(STATE.players[sc.winner]) + ' took the series.' : (ser.closed ? ' Ended early.' : ''))
+          + ' Switch off to take this game out of the series.</p>';
+      } else {
+        var now = seriesScore(ser);
+        var after = seriesScore(ser, {winner: draft.winner, t: draft.t});
+        body = '<p class="fnote" style="margin-top:6px">Game ' + k + ' of the best of ' + ser.of + ' that started ' + start + '. '
+          + 'Score so far: ' + scoreLine(now) + '. '
+          + (tie ? 'A tie does not count toward the series.'
+                 : (after.winner === draft.winner ? 'This win takes the series for ' + esc(STATE.players[draft.winner]) + '.'
+                                                  : 'First to ' + seriesNeed(ser) + ' takes it.'))
+          + '</p>'
+          + '<p class="fnote" style="margin-top:6px"><button type="button" class="undo" data-series-new="1">Start a new series instead</button></p>';
+      }
+    } else {
+      var pick = function(n){
+        return '<button type="button" class="pick n" data-series-of="' + n + '" aria-pressed="' + (draft.of === n ? 'true' : 'false') + '">Best of ' + n + '</button>';
+      };
+      var os = openSeriesFor(draft.game);
+      body = '<div class="pickrow" style="margin-top:8px">' + pick(3) + pick(5) + '</div>'
+        + '<p class="fnote" style="margin-top:6px">Starts a new series with this as game 1. First to ' + (draft.of === 5 ? 3 : 2) + ' takes it'
+        + (os ? ', and the best of ' + os.of + ' still in progress is ended where it stands.' : '.') + '</p>'
+        + (os ? '<p class="fnote" style="margin-top:6px"><button type="button" class="undo" data-series-join="' + os.id + '">Join the series in progress instead</button></p>' : '');
+    }
+    return '<div><div class="trow"><span class="tl">' + IC_STACK + 'Part of a series</span>' + sw + '</div>' + body + '</div>';
   }
 
   function shrinkPhoto(file){
@@ -1534,7 +1881,7 @@ function APP(){
     if(s !== lastRemote){
       lastRemote = s;
       STATE = data;
-      if(!STATE.bets) STATE.bets = [];
+      if(!STATE.bets) STATE.bets = []; if(!STATE.series) STATE.series = [];
       mirrorLocal();
     }
   }
@@ -1902,7 +2249,62 @@ function APP(){
       + (syncOpen ? '<div class="betform">' + rows + '</div>' + err : '')
       + '</section>'
       + passcodeSection()
+      + backupSection()
       + iconSection();
+  }
+
+  var backupNote = '';
+
+  function backupSection(){
+    var n = STATE.log.length, nb = STATE.bets.length;
+    return '<section class="setgroup"><h3>' + IC_DOWN + 'Backup</h3>'
+      + '<p class="synctxt">Saves the whole board to a file on this phone: every game tile, match, bet, series and photo, '
+      + 'currently ' + n + ' match' + (n === 1 ? '' : 'es') + ' and ' + nb + ' bet' + (nb === 1 ? '' : 's') + '.</p>'
+      + '<div class="acts"><button type="button" class="btn" data-backup="1">Download a backup</button></div>'
+      + '<p class="fnote" style="margin:0">' + (backupNote ? esc(backupNote) + ' ' : '')
+      + 'The file is not locked with the passcode, so anyone who opens it can read the board. Keep it somewhere private.</p>'
+      + '</section>';
+  }
+
+  function backupName(){
+    var d = new Date();
+    return 'bets-banter-backup-' + d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + '.json';
+  }
+
+  // Phones get the share sheet (Save to Files, AirDrop, mail); anything with a
+  // mouse gets a plain download.
+  function downloadBackup(){
+    var name = backupName();
+    var text = JSON.stringify(STATE, null, 1);
+    var blob = new Blob([text], {type: 'application/json'});
+    var touch = false;
+    try{ touch = window.matchMedia('(pointer:coarse)').matches; }catch(err){}
+    var file = null;
+    try{ file = new File([blob], name, {type: 'application/json'}); }catch(err){}
+    if(touch && file && navigator.canShare && navigator.canShare({files: [file]})){
+      navigator.share({files: [file], title: name}).then(function(){
+        backupNote = 'Backup handed off as ' + name + '.'; render();
+      }, function(err){
+        if(err && err.name === 'AbortError') return;
+        plainDownload(blob, name);
+      });
+      return;
+    }
+    plainDownload(blob, name);
+  }
+
+  function plainDownload(blob, name){
+    try{
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = name; a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1500);
+      backupNote = 'Saved as ' + name + '.';
+    }catch(err){
+      backupNote = 'This browser would not save the file.';
+    }
+    render();
   }
 
   function passcodeSection(){
@@ -2010,7 +2412,7 @@ function APP(){
     var restored = undoSnap;
     clearUndo();
     try{ STATE = JSON.parse(restored); }catch(err){ render(); return; }
-    if(!STATE.bets) STATE.bets = [];
+    if(!STATE.bets) STATE.bets = []; if(!STATE.series) STATE.series = [];
     render(); save();
   }
 
@@ -2078,6 +2480,16 @@ function APP(){
       var btn = af.querySelector('[data-attach]');
       var sel = document.getElementById('bd-match');
       if(!btn || !sel || !sel.value) return;
+      if(sel.value.indexOf('s:') === 0){
+        var toSer = seriesById(sel.value.slice(2));
+        if(!toSer) return;
+        snapshot('Attached a bet to the ' + gameName(toSer.game) + ' series');
+        STATE.bets.forEach(function(x){ if(x.id === btn.getAttribute('data-attach')){ delete x.matchId; x.seriesId = toSer.id; } });
+        delete toSer.nobet;
+        settleSeries(toSer.id);
+        render(); save();
+        return;
+      }
       snapshot('Attached a bet to ' + gameName((function(){
         var g = ''; STATE.log.forEach(function(e){ if(e.id === sel.value) g = e.game; }); return g;
       })()));
@@ -2146,12 +2558,14 @@ function APP(){
           if(!newText){ lockErr = 'A bet needs something written on it.'; render(); return; }
           var newBy = document.getElementById('be-by').value;
           var newWho = document.getElementById('be-who').value;
+          var onEl = document.getElementById('be-on');
           snapshot('Edited a bet');
           STATE.bets.forEach(function(x){
             if(x.id !== sv.getAttribute('data-bet-save')) return;
             x.text = newText;
             if(newBy === 'a' || newBy === 'b') x.by = newBy; else delete x.by;
             if(newWho === 'a' || newWho === 'b') x.owedBy = newWho; else x.owedBy = '';
+            if(onEl){ if(onEl.value) x.onGame = onEl.value; else delete x.onGame; }
           });
           lockErr = ''; betEdit = false;
           render(); save(); return;
@@ -2159,8 +2573,8 @@ function APP(){
         var un = ev.target.closest('[data-bet-unlink]');
         if(un && !readOnly){
           var uid2 = un.getAttribute('data-bet-unlink');
-          snapshot('Unlinked a bet from its match');
-          STATE.bets.forEach(function(x){ if(x.id === uid2) delete x.matchId; });
+          snapshot('Unlinked a bet');
+          STATE.bets.forEach(function(x){ if(x.id === uid2){ delete x.matchId; delete x.seriesId; delete x.onGame; } });
           render(); save(); return;
         }
         if(ev.target.closest('[data-bet-cancel]')){ betEdit = false; lockErr = ''; render(); return; }
@@ -2213,6 +2627,16 @@ function APP(){
         STATE.games.forEach(function(g){ if(g.id === gid2){ if(g.ties) delete g.ties; else g.ties = true; } });
         render(); save(); return;
       }
+      var se = ev.target.closest('[data-series-end]');
+      if(se && !readOnly){
+        var es = seriesById(se.getAttribute('data-series-end'));
+        if(es){
+          snapshot('Ended the ' + gameName(es.game) + ' series');
+          es.closed = true;
+          settleSeries(es.id);
+        }
+        render(); save(); return;
+      }
       var tie = ev.target.closest('[data-tie]');
       if(tie){
         var tg = tie.getAttribute('data-tie');
@@ -2249,15 +2673,34 @@ function APP(){
         var swK = swHit.getAttribute('data-sw');
         if(swK === 'date') draft.useDate = !draft.useDate;
         else if(swK === 'time') draft.useTime = !draft.useTime;
+        else if(swK === 'series'){
+          if(!draft.inSeries){ draft.ownBet = draft.bet; draft.ownBy = draft.by; draft.ownUse = draft.useBet; }
+          draft.inSeries = !draft.inSeries;
+          if(draft.inSeries && !draftSeries() && !draft.closeSid){
+            var os2 = openSeriesFor(draft.game);
+            draft.seriesId = draft.origSeries || (os2 ? os2.id : '');
+          }
+          // A series already marked as having nothing riding on it keeps that.
+          fillSeriesBet();
+        }
         else draft.useBet = !draft.useBet;
         render(); return;
       }
       if(ev.target.closest('[data-save-sheet]')){ commitSheet(); return; }
+      var sOf = ev.target.closest('[data-series-of]');
+      if(sOf){ readSheet(); draft.of = +sOf.getAttribute('data-series-of') === 5 ? 5 : 3; render(); return; }
+      if(ev.target.closest('[data-series-new]')){ readSheet(); draft.closeSid = draft.seriesId; draft.seriesId = ''; fillSeriesBet(); render(); return; }
+      var sJoin = ev.target.closest('[data-series-join]');
+      if(sJoin){
+        readSheet(); draft.seriesId = sJoin.getAttribute('data-series-join'); draft.closeSid = '';
+        fillSeriesBet();
+        render(); return;
+      }
       if(ev.target.closest('[data-drop-photo]')){ readSheet(); draft.photo = ''; render(); return; }
       if(onScrim || ev.target.closest('button[data-close-sheet]')){ draft = null; render(); return; }
       return;   // everything else inside the sheet is a plain form control
     }
-    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-menu],[data-betgroup],[data-fmt],[data-pass-forget],[data-sort],[data-cal],[data-day]');
+    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-menu],[data-betgroup],[data-fmt],[data-pass-forget],[data-sort],[data-cal],[data-day],[data-backup]');
     if(!t) return;
     if(t.hasAttribute('data-open-up')){ chooser = true; render(); return; }
     if(t.hasAttribute('data-menu')){ gameMenu = t.getAttribute('data-menu'); gameEdit = false; lockErr = ''; render(); return; }
@@ -2311,6 +2754,7 @@ function APP(){
     if(t.hasAttribute('data-pass-forget')){ disconnectBoard(); locked = true; render(); return; }
     if(t.hasAttribute('data-disconnect')){ disconnectBoard(); return; }
     if(t.hasAttribute('data-showall')){ showAll = true; render(); return; }
+    if(t.hasAttribute('data-backup')){ downloadBackup(); return; }
     if(readOnly) return;
     if(t.hasAttribute('data-bet-toggle')){
       var bid = t.getAttribute('data-bet-toggle');
@@ -2342,6 +2786,10 @@ function APP(){
       var gid = t.getAttribute('data-kill');
       snapshot('Removed the ' + gameName(gid) + ' tile');
       STATE.games = STATE.games.filter(function(g){ return g.id !== gid; });
+      STATE.series.forEach(function(x){
+        if(x.game === gid) STATE.bets.forEach(function(y){ if(y.seriesId === x.id){ delete y.seriesId; delete y.onGame; } });
+      });
+      STATE.series = STATE.series.filter(function(x){ return x.game !== gid; });
       render(); save(); return;
     }
     if(t.hasAttribute('data-undo')){
@@ -2349,12 +2797,18 @@ function APP(){
       var m = null;
       STATE.log.forEach(function(e){ if(e.id === id) m = e; });
       var tiedBet = betFor(id);
+      var mSid = m && m.series && seriesById(m.series) ? m.series : '';
       snapshot(m ? ((m.winner === 't' ? 'Deleted the ' + gameName(m.game) + ' tie'
                      : 'Deleted ' + STATE.players[m.winner] + '\u2019s ' + gameName(m.game) + ' win')
                     + (tiedBet ? ' and its bet' : '')) : 'Deleted a match');
       STATE.log = STATE.log.filter(function(e){ return e.id !== id; });
       // a match's bet has nothing left to hang on, so it goes with it
       STATE.bets = STATE.bets.filter(function(x){ return x.matchId !== id; });
+      if(mSid){
+        // The series and its bet outlive any one game, even the last one in it.
+        STATE.bets.forEach(function(x){ if(x.seriesId === mSid && x.onGame === id) delete x.onGame; });
+        settleSeries(mSid);
+      }
       render(); save(); return;
     }
     openNew(t.getAttribute('data-game'), t.getAttribute('data-w'));
