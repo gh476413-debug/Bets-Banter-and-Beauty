@@ -164,6 +164,27 @@ function APP(){
     + '.game{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}'
     + '.game > .gh{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:13px 14px 10px}'
     + '.gh h2{margin:0;font-family:var(--f-disp);font-weight:400;font-size:21px;letter-spacing:.02em;text-transform:uppercase}'
+    + '.gname{appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;letter-spacing:inherit;text-transform:inherit;'
+    + 'color:inherit;cursor:pointer;text-align:left;display:inline-flex;align-items:center;gap:6px}'
+    + '.gname .gc{font-family:var(--f-body);font-size:15px;color:var(--muted);line-height:1}'
+    + '.gname:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:4px}'
+    + '.glday{margin:14px 0 0}'
+    + '.glday h4{margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}'
+    + '.gllist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}'
+    + '.glrow{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);'
+    + 'padding:8px 9px;font-size:14px;position:relative}'
+    + '.glrow.dragging{z-index:5;box-shadow:var(--shadow);background:var(--surface);border-color:var(--ink);transition:none}'
+    + '.glrow.settle{transition:transform .14s ease}'
+    + '.grip{appearance:none;border:0;background:transparent;color:var(--muted);cursor:grab;touch-action:none;'
+    + 'padding:6px 4px;margin:-6px -2px;border-radius:6px;flex:0 0 auto;display:flex}'
+    + '.grip svg{width:16px;height:16px}'
+    + '.grip:focus-visible{outline:2px solid var(--ink);outline-offset:1px}'
+    + '.glrow.dragging .grip{cursor:grabbing;color:var(--ink)}'
+    + '.glnum{flex:0 0 auto;min-width:16px;text-align:center;font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}'
+    + '.glmain{flex:1 1 auto;min-width:0}'
+    + '.glmain .l2{margin-top:2px}'
+    + '.glrow .w{font-weight:600}.glrow .w.a{color:var(--a-ink)}.glrow .w.b{color:var(--b-ink)}.glrow .w.t{color:var(--muted)}'
+    + 'body.dragging-on{user-select:none;-webkit-user-select:none}'
     + '.gh .rule{margin:0;font-size:11px;color:var(--muted);text-align:right}'
     + '.ghr{display:flex;align-items:center;gap:7px;flex:0 1 auto;min-width:0}'
     + '.bar{display:flex;height:4px;background:var(--surface-2);margin:0 14px;border-radius:2px;overflow:hidden}'
@@ -400,6 +421,8 @@ function APP(){
   var chooser = false;
   var gameMenu = '';
   var gameEdit = false;
+  var gameLog = '';
+  var dragOn = null;
   var betView = '';
   var betEdit = false;
   var undoSnap = null;
@@ -559,7 +582,8 @@ function APP(){
         + ' aria-label="Options for ' + esc(g.name) + '">' + IC_DOTS + '</button>';
     var right = '<div class="ghr">' + (g.rule ? '<p class="rule">' + esc(g.rule) + '</p>' : '') + menu + '</div>';
     return '<article class="game">'
-      + '<div class="gh"><h2>' + esc(g.name) + '</h2>' + right + '</div>'
+      + '<div class="gh"><h2><button type="button" class="gname" data-gamelog="' + g.id + '"'
+      + ' aria-label="All ' + esc(g.name) + ' matches">' + esc(g.name) + '<span class="gc" aria-hidden="true">&#8250;</span></button></h2>' + right + '</div>'
       + bar
       + '<div class="sides">' + side('a', ca, cb) + side('b', cb, ca) + '</div>'
       + (ct ? '<p class="tieline">' + ct + ' tie' + (ct === 1 ? '' : 's') + '</p>' : '')
@@ -746,6 +770,12 @@ function APP(){
   var IC_DOWN = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'
     + '<path d="M12 3.6v11.2M7.4 10.4l4.6 4.6 4.6-4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'
     + '<path d="M4.4 15.6v2.8a2 2 0 0 0 2 2h11.2a2 2 0 0 0 2-2v-2.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '</svg>';
+
+  var IC_GRIP = '<svg viewBox="0 0 24 24" aria-hidden="true">'
+    + '<circle cx="9" cy="6" r="1.6" fill="currentColor"/><circle cx="15" cy="6" r="1.6" fill="currentColor"/>'
+    + '<circle cx="9" cy="12" r="1.6" fill="currentColor"/><circle cx="15" cy="12" r="1.6" fill="currentColor"/>'
+    + '<circle cx="9" cy="18" r="1.6" fill="currentColor"/><circle cx="15" cy="18" r="1.6" fill="currentColor"/>'
     + '</svg>';
 
   var IC_CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true">'
@@ -1314,6 +1344,7 @@ function APP(){
     if(sid) settleSeries(sid);
     if(prevSid && prevSid !== sid) settleSeries(prevSid);
     popKey = draft.isNew ? (draft.game + ':' + draft.winner) : null;
+    if(draft.backTo) gameLog = draft.backTo;
     draft = null;
     render(); save();
   }
@@ -1368,6 +1399,145 @@ function APP(){
       + ', ' + leadLine(sc) + '. Ending it here leaves the series without a winner, and its bet with nobody owing until you pick.</p>'
       + '<div class="acts"><button type="button" class="btn" data-series-end="' + os.id + '">End the series here</button></div></div>';
   }
+
+  // Every game in played order, a day at a time, oldest first within the day.
+  function playedOrder(list){
+    var at = {};
+    STATE.log.forEach(function(e, n){ at[e.id] = n; });
+    return list.slice().sort(function(x, y){ return (new Date(x.t) - new Date(y.t)) || (at[x.id] - at[y.id]); });
+  }
+
+  function gameLogSheet(){
+    var name = gameName(gameLog);
+    var mine = playedOrder(STATE.log.filter(function(e){ return e.game === gameLog; }));
+    var days = [], byDay = {};
+    mine.forEach(function(e){
+      var k = dayKey(e.t) || 'none';
+      if(!byDay[k]){ byDay[k] = []; days.push(k); }
+      byDay[k].push(e);
+    });
+    days.reverse();   // newest day on top
+    var canDrag = false;
+    var groups = days.map(function(k){
+      var list = byDay[k], movable = !readOnly && list.length > 1;
+      if(movable) canDrag = true;
+      var pd = new Date(k + 'T12:00:00');
+      var head = (k === 'none' || isNaN(pd)) ? 'No date'
+        : pd.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric',
+            year: pd.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined});
+      if(list.every(function(e){ return e.nodate; })) head += ' &middot; date not noted';
+      return '<section class="glday"><h4>' + head + (list.length > 1 ? ' &middot; ' + list.length + ' games' : '') + '</h4>'
+        + '<ul class="gllist" data-glday="' + k + '">' + list.map(function(e, n){
+            var bits = [];
+            if(!e.notime) bits.push('<span class="when">' + clock(e.t) + '</span>');
+            if(e.loc) bits.push('<span class="place">' + esc(e.loc) + '</span>');
+            var tags = rowTags(e);
+            var meta = bits.join('<span class="sep">&middot;</span>') + tags.join('');
+            return '<li class="glrow" data-glid="' + e.id + '">'
+              + (movable ? '<button type="button" class="grip" data-grip="' + e.id + '" aria-label="Move this game. Drag, or use the arrow keys.">' + IC_GRIP + '</button>' : '')
+              + '<span class="glnum">' + (list.length > 1 ? (n + 1) : '') + '</span>'
+              + '<span class="chip ' + e.winner + '" style="margin-top:0"></span>'
+              + '<div class="glmain"><div>' + (e.winner === 't' ? '<span class="w t">Tied</span>'
+                  : '<span class="w ' + e.winner + '">' + esc(STATE.players[e.winner]) + '</span> won') + '</div>'
+              + (meta ? '<div class="l2">' + meta + '</div>' : '') + '</div>'
+              + (readOnly ? '' : '<button type="button" class="undo" data-gl-edit="' + e.id + '">Edit</button>')
+              + '</li>';
+          }).join('') + '</ul></section>';
+    }).join('');
+    var t = tally();
+    return '<div class="scrim" data-close-gl="1"><div class="sheet">'
+      + '<h2>' + esc(name) + '</h2>'
+      + '<p class="lead">' + (mine.length
+          ? mine.length + ' match' + (mine.length === 1 ? '' : 'es') + ' &middot; ' + esc(STATE.players.a) + ' ' + t.a[gameLog]
+            + ', ' + esc(STATE.players.b) + ' ' + t.b[gameLog] + (t.t[gameLog] ? ', ' + t.t[gameLog] + ' tied' : '') + '.'
+          : 'Nothing logged for this game yet.')
+        + (canDrag ? ' Drag the handle to put games from the same day in the order they were played.' : '') + '</p>'
+      + groups
+      + '<div class="acts"><button type="button" class="btn" data-close-gl="1">Close</button></div>'
+      + '</div></div>';
+  }
+
+  // New running order for one day of one game. The day's own timestamps are
+  // dealt back out in the new order, a second apart where they would tie, so
+  // every list, series count and calendar reads the same order.
+  function applyOrder(ids){
+    var list = ids.map(function(id){
+      for(var i = 0; i < STATE.log.length; i++) if(STATE.log[i].id === id) return STATE.log[i];
+      return null;
+    }).filter(Boolean);
+    if(list.length < 2) return false;
+    var before = playedOrder(list).map(function(e){ return e.id; }).join(',');
+    if(before === ids.join(',')) return false;
+    var times = list.map(function(e){ return new Date(e.t).getTime(); }).sort(function(x, y){ return x - y; });
+    for(var i = 1; i < times.length; i++) if(times[i] <= times[i - 1]) times[i] = times[i - 1] + 1000;
+    snapshot('Reordered ' + gameName(list[0].game) + ' on ' + when(list[0].t));
+    list.forEach(function(e, n){ e.t = new Date(times[n]).toISOString(); });
+    STATE.log.sort(function(p, q){ return new Date(p.t) - new Date(q.t); });
+    var seen = {};
+    list.forEach(function(e){ if(e.series && !seen[e.series]){ seen[e.series] = 1; settleSeries(e.series); } });
+    return true;
+  }
+
+  function dayIds(ul){
+    return Array.prototype.map.call(ul.querySelectorAll('.glrow'), function(li){ return li.getAttribute('data-glid'); });
+  }
+
+  // Pointer dragging, so it works the same with a finger or a mouse.
+  root.addEventListener('pointerdown', function(ev){
+    var grip = ev.target.closest && ev.target.closest('[data-grip]');
+    if(!grip || readOnly || !gameLog) return;
+    var row = grip.closest('.glrow'), ul = row.parentNode;
+    ev.preventDefault();
+    try{ grip.setPointerCapture(ev.pointerId); }catch(err){}
+    dragOn = { row: row, ul: ul, grip: grip, startY: ev.clientY, id: ev.pointerId, before: dayIds(ul).join(',') };
+    row.classList.add('dragging');
+    document.body.classList.add('dragging-on');
+  });
+
+  root.addEventListener('pointermove', function(ev){
+    if(!dragOn || ev.pointerId !== dragOn.id) return;
+    ev.preventDefault();
+    var row = dragOn.row, ul = dragOn.ul;
+    var dy = ev.clientY - dragOn.startY;
+    var next = row.nextElementSibling, prev = row.previousElementSibling;
+    if(next && dy > (next.offsetHeight + 6) / 2){
+      ul.insertBefore(next, row);
+      dragOn.startY += next.offsetHeight + 6;
+    } else if(prev && dy < -(prev.offsetHeight + 6) / 2){
+      ul.insertBefore(row, prev);
+      dragOn.startY -= prev.offsetHeight + 6;
+    }
+    row.style.transform = 'translateY(' + (ev.clientY - dragOn.startY) + 'px)';
+  });
+
+  function endDrag(ev){
+    if(!dragOn || (ev && ev.pointerId !== dragOn.id)) return;
+    var d = dragOn; dragOn = null;
+    d.row.classList.remove('dragging');
+    d.row.style.transform = '';
+    document.body.classList.remove('dragging-on');
+    var ids = dayIds(d.ul);
+    if(ids.join(',') !== d.before && applyOrder(ids)){ render(); save(); }
+    else render();
+    var g = document.querySelector('[data-grip="' + d.row.getAttribute('data-glid') + '"]');
+    if(g && ev && ev.pointerType !== 'touch') g.focus();
+  }
+  root.addEventListener('pointerup', endDrag);
+  root.addEventListener('pointercancel', endDrag);
+
+  // Arrow keys on a focused handle move it one place.
+  root.addEventListener('keydown', function(ev){
+    var grip = ev.target.closest && ev.target.closest('[data-grip]');
+    if(!grip || readOnly || !gameLog) return;
+    if(ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+    ev.preventDefault();
+    var ul = grip.closest('.gllist'), ids = dayIds(ul), id = grip.getAttribute('data-grip');
+    var i = ids.indexOf(id), j = ev.key === 'ArrowUp' ? i - 1 : i + 1;
+    if(j < 0 || j >= ids.length) return;
+    ids.splice(i, 1); ids.splice(j, 0, id);
+    if(applyOrder(ids)){ render(); save(); }
+    var g = document.querySelector('[data-grip="' + id + '"]'); if(g) g.focus();
+  });
 
   function chooserSheet(){
     var cur = nextInitiator();
@@ -1540,6 +1710,7 @@ function APP(){
   }
 
   function sheet(){
+    if(gameLog) return gameLogSheet();
     if(gameMenu) return gameSheet();
     if(betView) return betSheet();
     if(chooser) return chooserSheet();
@@ -1983,7 +2154,7 @@ function APP(){
     if(poller || mode !== 'cloud') return;
     poller = setInterval(function(){
       if(locked || !gh.token) return;                                           // nothing to refresh until the passcode is in
-      if(draft || photoView || chooser || betView || gameMenu || adding || timer) return;   // don't yank an open sheet or a pending save out from under anyone
+      if(draft || photoView || chooser || betView || gameMenu || gameLog || dragOn || adding || timer) return;   // don't yank an open sheet or a pending save out from under anyone
       pullCloud(false);
     }, 20000);
   }
@@ -2419,7 +2590,7 @@ function APP(){
   function toast(){
     if(!undoSnap) return '';
     // With a sheet up, the toast moves to the top so it never covers the sheet's buttons.
-    var up = (gameMenu || betView || chooser || photoView || draft) ? ' up' : '';
+    var up = (gameMenu || gameLog || betView || chooser || photoView || draft) ? ' up' : '';
     return '<div class="toast' + up + '"><span class="tmsg">' + esc(undoLabel) + '</span>'
       + '<button type="button" class="tbtn" data-undo-action="1">Undo</button>'
       + '<button type="button" class="tx" data-dismiss-undo="1" aria-label="Dismiss">&times;</button></div>';
@@ -2613,6 +2784,18 @@ function APP(){
       if(onScrim || ev.target.closest('button[data-close-bet]')){ betView = ''; betEdit = false; render(); }
       return;
     }
+    if(gameLog){
+      var ge2 = ev.target.closest('[data-gl-edit]');
+      if(ge2 && !readOnly){
+        var eid3 = ge2.getAttribute('data-gl-edit'), back = gameLog;
+        gameLog = '';
+        STATE.log.forEach(function(e){ if(e.id === eid3) openEdit(e); });
+        if(draft){ draft.backTo = back; render(); }
+        return;
+      }
+      if(onScrim || ev.target.closest('button[data-close-gl]')){ gameLog = ''; render(); }
+      return;
+    }
     if(gameMenu){
       if(gameEdit){
         if(ev.target.closest('[data-game-save]')){ ev.preventDefault(); saveGameEdit(); return; }
@@ -2697,12 +2880,13 @@ function APP(){
         render(); return;
       }
       if(ev.target.closest('[data-drop-photo]')){ readSheet(); draft.photo = ''; render(); return; }
-      if(onScrim || ev.target.closest('button[data-close-sheet]')){ draft = null; render(); return; }
+      if(onScrim || ev.target.closest('button[data-close-sheet]')){ if(draft.backTo) gameLog = draft.backTo; draft = null; render(); return; }
       return;   // everything else inside the sheet is a plain form control
     }
-    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-menu],[data-betgroup],[data-fmt],[data-pass-forget],[data-sort],[data-cal],[data-day],[data-backup]');
+    var t = ev.target.closest('[data-game],[data-undo],[data-showall],[data-open-add],[data-cancel-add],[data-kill],[data-edit],[data-cancel-edit],[data-tab],[data-bet-toggle],[data-bet-del],[data-disconnect],[data-copy-link],[data-photo],[data-open-up],[data-bet-open],[data-ledger-toggle],[data-cal-toggle],[data-sync-toggle],[data-menu],[data-betgroup],[data-fmt],[data-pass-forget],[data-sort],[data-cal],[data-day],[data-backup],[data-gamelog]');
     if(!t) return;
     if(t.hasAttribute('data-open-up')){ chooser = true; render(); return; }
+    if(t.hasAttribute('data-gamelog')){ gameLog = t.getAttribute('data-gamelog'); render(); return; }
     if(t.hasAttribute('data-menu')){ gameMenu = t.getAttribute('data-menu'); gameEdit = false; lockErr = ''; render(); return; }
     if(t.hasAttribute('data-bet-open')){ betView = t.getAttribute('data-bet-open'); betEdit = false; lockErr = ''; render(); return; }
     if(t.hasAttribute('data-ledger-toggle')){ ledgerOpen = !ledgerOpen; render(); return; }
@@ -2737,7 +2921,7 @@ function APP(){
     }
     if(t.hasAttribute('data-tab')){
       var v = t.getAttribute('data-tab');
-      if(v !== view){ view = v; draft = null; chooser = false; betView = ''; betEdit = false; gameMenu = ''; adding = false; render(); window.scrollTo(0, 0); }
+      if(v !== view){ view = v; draft = null; chooser = false; betView = ''; betEdit = false; gameMenu = ''; gameLog = ''; adding = false; render(); window.scrollTo(0, 0); }
       return;
     }
     if(t.hasAttribute('data-copy-link')){
